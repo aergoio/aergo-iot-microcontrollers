@@ -26,3 +26,10 @@ You can find detailed instructions [here](https://techtutorialsx.com/2018/10/19/
 
 Open the `aergo-espressif-esp32.ino` file, modify the WiFi credentials,
 compile and upload to an ESP32 device.
+
+## Security
+
+ESP32 supports [Secure Boot](https://docs.espressif.com/projects/esp-idf/en/latest/security/secure-boot.html)
+and [Flash Encryption](https://docs.espressif.com/projects/esp-idf/en/latest/security/flash-encryption.html)
+
+You can also read a compact overview on this article: [Understanding ESP32’s Security Features](https://medium.com/the-esp-journal/understanding-esp32s-security-features-14483e465724)
