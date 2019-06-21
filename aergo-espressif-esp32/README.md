@@ -1,6 +1,6 @@
-# aergo-espressif-esp32
+# Aergo IoT - espressif ESP32
 
-This repo contains example code on how to inteface with the aergo
+This folder contains example code on how to inteface with the aergo
 blockchain on Espressif ESP32 microcontrollers.
 
 ## Requirements
