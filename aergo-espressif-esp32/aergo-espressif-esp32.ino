@@ -525,7 +525,7 @@ bool encode_bigint(uint8_t **pptr, uint64_t value){
 
   // for now it is just including a single byte (zero)
   // this should be removed:
-  memcpy(*pptr, &value, 1); *pptr++;
+  memcpy(*pptr, &value, 1); (*pptr)++;
 
   return true;
 }
@@ -557,7 +557,7 @@ bool calculate_tx_hash(struct txn *txn, unsigned char *hash, bool include_signat
 
   memcpy(ptr, &txn->type, 4); ptr += 4;
 
-  memcpy(ptr, &txn->chainIdHash, 32); ptr += 32;
+  memcpy(ptr, txn->chainIdHash, 32); ptr += 32;
 
   if (include_signature) {
     memcpy(ptr, txn->sign, txn->sig_len); ptr += txn->sig_len;
