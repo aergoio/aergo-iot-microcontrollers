@@ -938,10 +938,11 @@ void http2_task(void *args)
 
   {
   mbedtls_ecdsa_context account;
-  const mbedtls_ecp_curve_info *curve_info = mbedtls_ecp_curve_info_from_grp_id(MBEDTLS_ECP_DP_SECP256R1);
+  const mbedtls_ecp_curve_info *curve_info = mbedtls_ecp_curve_info_from_grp_id(MBEDTLS_ECP_DP_SECP256K1);
   mbedtls_ecdsa_init(&account);
   int ret_genkey = mbedtls_ecdsa_genkey(&account, curve_info->grp_id, ecdsa_rand, NULL);
   ContractCall(&hd, "AmgLnRaGFLyvCPCEMHYJHooufT1c1pENTRGeV78WNPTxwQ2RYUW7", "{\"Name\":\"set_name\", \"Args\":[\"ESP32\"]}", &account);
+  mbedtls_ecdsa_free(&account);
   }
 
   queryContract(&hd, "AmgLnRaGFLyvCPCEMHYJHooufT1c1pENTRGeV78WNPTxwQ2RYUW7", "{\"Name\":\"hello\"}");
