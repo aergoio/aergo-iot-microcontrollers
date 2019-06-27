@@ -196,13 +196,26 @@ bool encode_fixed64(pb_ostream_t *stream, const pb_field_t *field, void * const 
 
 bool encode_varuint64(pb_ostream_t *stream, const pb_field_t *field, void * const *arg){
     uint64_t value = **(uint64_t**)arg;
+    uint64_t value2;
+    uint8_t *ptr;
+    size_t len;
 
     Serial.printf("encode_varuint64 - value=%llu\n", value);
 
     if (!pb_encode_tag_for_field(stream, field))
         return false;
 
-    return pb_encode_varint(stream, value);
+    // convert to big endian
+    copy_be64(&value2, &value);
+
+    // skip zero bytes, unless the last one
+    ptr = (uint8_t*)&value2;
+    len = 8;
+    while( *ptr==0 && len>1 ){ ptr++; len--; }
+
+    Serial.printf("encode_varuint64 - len=%u\n", len);
+
+    return pb_encode_string(stream, ptr, len);
 }
 
 bool pb_encode_address(pb_ostream_t *stream, const pb_field_t *field, void * const *arg) {
@@ -942,9 +955,9 @@ void http2_task(void *args)
  
 void setup() {
   Serial.begin(115200);
- 
+
   WiFi.begin(ssid, password);
- 
+
   while (WiFi.status() != WL_CONNECTED) {
     delay(1000);
     Serial.println("Connecting to WiFi...");
