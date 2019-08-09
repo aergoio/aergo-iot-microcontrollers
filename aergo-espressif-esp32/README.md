@@ -3,6 +3,8 @@
 This folder contains example code on how to inteface with the aergo
 blockchain on Espressif ESP32 microcontrollers.
 
+![esp32](https://user-images.githubusercontent.com/7624275/62760004-4bea1b00-ba59-11e9-85c0-b7075b506254.jpg)
+
 ## Requirements
 
 * Arduino IDE
