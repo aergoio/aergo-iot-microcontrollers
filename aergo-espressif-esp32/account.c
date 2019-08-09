@@ -3,12 +3,14 @@
 #include "sha256.h"
 #include "account.h"
 
-void sha256(void *hash, const void *data, size_t len) {
+bool sha256(void *hash, const void *data, size_t len) {
   SHA256_CTX ctx;
 
   sha256_init(&ctx);
   sha256_update(&ctx, (const uchar*) data, len);
   sha256_final(&ctx, (uchar*)hash);
+
+  return true;
 }
 
 bool encode_address(const void *data, size_t datasize, char *out, size_t outsize){

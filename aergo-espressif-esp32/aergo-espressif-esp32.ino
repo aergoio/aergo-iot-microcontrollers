@@ -64,6 +64,89 @@ static int ecdsa_rand(void *rng_state, unsigned char *output, size_t len){
     return 0;
 }
 
+#include "EEPROM.h"
+
+#define EACH         64
+#define EEPROM_SIZE  (4 * EACH) + 2
+
+int get_private_key(mbedtls_ecdsa_context *keypair){
+  const mbedtls_ecp_curve_info *curve_info = mbedtls_ecp_curve_info_from_grp_id(MBEDTLS_ECP_DP_SECP256K1);
+  unsigned char buf[EEPROM_SIZE];
+  int rc, base, i;
+
+  /* read data from EPROM */
+  if (!EEPROM.begin(EEPROM_SIZE)){
+    Serial.println("failed to initialise EEPROM");
+    return -1;
+  }
+
+  if( EEPROM.read(0)!=53 || EEPROM.read(1)!=79 ){
+    Serial.println("invalid values at EEPROM. generating a new private key");
+    goto loc_notset;
+  }
+  base = 2;
+
+  for (i=0; i<EEPROM_SIZE-base; i++) {
+    buf[i] = EEPROM.read(base+i);
+  }
+
+  /* check if  */
+  mbedtls_ecp_group_load(&keypair->grp, MBEDTLS_ECP_DP_SECP256K1);
+
+  rc = mbedtls_mpi_read_binary(&keypair->d, buf, EACH);
+  if (rc) {
+    Serial.println("failed read private key. probably invalid. generating a new one");
+    goto loc_notset;
+  }
+  rc = mbedtls_mpi_read_binary(&keypair->Q.X, &buf[EACH], EACH);
+  if (rc) {
+    Serial.println("failed read public key X. probably invalid. generating a new one");
+    goto loc_notset;
+  }
+  rc = mbedtls_mpi_read_binary(&keypair->Q.Y, &buf[EACH*2], EACH);
+  if (rc) {
+    Serial.println("failed read public key Y. probably invalid. generating a new one");
+    goto loc_notset;
+  }
+  rc = mbedtls_mpi_read_binary(&keypair->Q.Z, &buf[EACH*3], EACH);
+  if (rc) {
+    Serial.println("failed read public key Z. probably invalid. generating a new one");
+    goto loc_notset;
+  }
+
+
+  if (rc) {
+    Serial.println("failed read private key. probably invalid. generating a new one");
+    loc_notset:
+
+    /* generate a new private key */
+    rc = mbedtls_ecdsa_genkey(keypair, curve_info->grp_id, ecdsa_rand, NULL);
+    if (rc) return rc;
+
+    /* store the private key on the EPROM */
+    rc = mbedtls_mpi_write_binary(&keypair->d, buf, EACH);
+    if (rc) return rc;
+    rc = mbedtls_mpi_write_binary(&keypair->Q.X, &buf[EACH], EACH);
+    if (rc) return rc;
+    rc = mbedtls_mpi_write_binary(&keypair->Q.Y, &buf[EACH*2], EACH);
+    if (rc) return rc;
+    rc = mbedtls_mpi_write_binary(&keypair->Q.Z, &buf[EACH*3], EACH);
+    if (rc) return rc;
+
+    Serial.print("writting the private key to EEPROM.");
+    EEPROM.write(0, 53);
+    EEPROM.write(1, 79);
+    for (i=0; i<EEPROM_SIZE-2; i++) {
+      EEPROM.write(i+2, buf[i]);
+      Serial.print(".");
+    }
+    EEPROM.commit();
+    Serial.println(" done");
+
+  }
+
+  return 0;
+}
 
 static void dump_buf(const char *title, unsigned char *buf, size_t len){
     size_t i;
@@ -244,7 +327,7 @@ bool copy_ecdsa_address(mbedtls_ecdsa_context *account, uint8_t *buf, size_t buf
     ret = mbedtls_ecp_point_write_binary(&account->grp, &account->Q,
                 MBEDTLS_ECP_PF_COMPRESSED, &len, buf, bufsize);
 
-    Serial.printf("pb_encode_ecdsa_address - len=%d\n", len);
+    Serial.printf("copy_ecdsa_address - ret=%d len=%d\n", ret, len);
 
     return ret && (len == AddressLength);
 }
@@ -697,8 +780,9 @@ bool encode_transaction(uint8_t *buffer, size_t *psize, struct txn *txn) {
 
 bool EncodeContractCall(uint8_t *buffer, size_t *psize, char *contract_address, char *call_info, mbedtls_ecdsa_context *account) {
   struct txn txn;
+  char out[64]={0};
 
-  txn.nonce = 1;
+  txn.nonce = 1;  // TODO: retrieve the account's nonce
   copy_ecdsa_address(account, txn.account, sizeof txn.account);
   decode_address(contract_address, strlen(contract_address), txn.recipient, sizeof(txn.recipient));
   txn.amount = 0;        // variable-length big integer
@@ -707,6 +791,9 @@ bool EncodeContractCall(uint8_t *buffer, size_t *psize, char *contract_address, 
   txn.gasPrice = 0;      // variable-length big integer
   txn.type = TxType_NORMAL;
   txn.chainIdHash = blockchain_id_hash;
+
+  encode_address(txn.account, sizeof txn.account, out, sizeof out);
+  Serial.printf("account address: %s\n", out);
 
   if (sign_transaction(&txn, account) == false) {
     return false;
@@ -851,7 +938,7 @@ void send_grpc_request(struct sh2lib_handle *hd, char *service, uint8_t *buffer,
       Serial.println("Error in execute");
       break;
     }
-    vTaskDelay(10);
+    vTaskDelay(25);
   }
 
   Serial.println("Request done. returning");
@@ -938,9 +1025,8 @@ void http2_task(void *args)
 
   {
   mbedtls_ecdsa_context account;
-  const mbedtls_ecp_curve_info *curve_info = mbedtls_ecp_curve_info_from_grp_id(MBEDTLS_ECP_DP_SECP256K1);
   mbedtls_ecdsa_init(&account);
-  int ret_genkey = mbedtls_ecdsa_genkey(&account, curve_info->grp_id, ecdsa_rand, NULL);
+  int rc = get_private_key(&account);
   ContractCall(&hd, "AmgLnRaGFLyvCPCEMHYJHooufT1c1pENTRGeV78WNPTxwQ2RYUW7", "{\"Name\":\"set_name\", \"Args\":[\"ESP32\"]}", &account);
   mbedtls_ecdsa_free(&account);
   }
