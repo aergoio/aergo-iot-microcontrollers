@@ -1157,7 +1157,6 @@ void http2_task(void *args)
         sprintf(json, "{\"Name\":\"set_name\", \"Args\":[\"%s\"]}", buf);
 
         ContractCall(&hd, "AmgLnRaGFLyvCPCEMHYJHooufT1c1pENTRGeV78WNPTxwQ2RYUW7", json, &account);
-        mbedtls_ecdsa_free(&account);
 
         delay(2000);
         queryContract(&hd, "AmgLnRaGFLyvCPCEMHYJHooufT1c1pENTRGeV78WNPTxwQ2RYUW7", "{\"Name\":\"hello\"}");
@@ -1169,6 +1168,7 @@ void http2_task(void *args)
     }
   }
 
+  mbedtls_ecdsa_free(&account);
   sh2lib_free(&hd);
   Serial.println("Disconnected");
 
