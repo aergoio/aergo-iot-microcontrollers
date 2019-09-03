@@ -904,18 +904,6 @@ bool EncodeAccountAddress(uint8_t *buffer, size_t *psize, mbedtls_ecdsa_context 
   SingleBytes message = SingleBytes_init_zero;
   uint32_t size32;
 
-/*
-  char out[64]={0};
-
-  copy_ecdsa_address(account, txn.account, sizeof txn.account);
-
-  encode_address(txn.account, sizeof txn.account, out, sizeof out);
-  Serial.printf("account address: %s\n", out);
-
-  return encode_xxx(buffer, psize, &txn);
-
-*/
-
   /* Create a stream that writes to the buffer */
   pb_ostream_t stream = pb_ostream_from_buffer(&buffer[5], *psize - 5);
 
@@ -1133,35 +1121,60 @@ void http2_task(void *args)
     vTaskDelete(NULL);
   }
 
-  //Serial.println("Connected. Preparing POST...");
-  Serial.printf("Connected. Preparing POST... hostname=%s\n", hd.hostname);
-
+  Serial.printf("Connected. hostname=%s\n", hd.hostname);
 
   //requestBlockStream(&hd);
   //requestBlock(&hd, 5447272);
 
   requestBlockchainStatus(&hd);
 
-  {
+
   mbedtls_ecdsa_context account;
   mbedtls_ecdsa_init(&account);
   int rc = get_private_key(&account);
-
   requestAccountState(&hd, &account);
 
-  ContractCall(&hd, "AmgLnRaGFLyvCPCEMHYJHooufT1c1pENTRGeV78WNPTxwQ2RYUW7", "{\"Name\":\"set_name\", \"Args\":[\"New test\"]}", &account);
-  mbedtls_ecdsa_free(&account);
+  Serial.println("");
+  Serial.println("------------------------------------");
+  Serial.println("Type your value for new transaction:");
+  while(1){
+    if(Serial.available() > 0){
+      String str = Serial.readStringUntil('\n');
+      int len = str.length();
+      if( len > 63 ){
+        Serial.println("your value is too long! max=63");
+      }else{
+        char buf[64];
+        str.toCharArray(buf, 64);
+        while( len>0 && (buf[len-1]=='\n' || buf[len-1]=='\r') ){
+          len--;
+          buf[len] = 0;
+        }
+        if( strcmp(buf,"q")==0 || strcmp(buf,"Q")==0 ) break;
+        Serial.printf("you typed: %s\n", buf);
+
+        char json[128];
+        sprintf(json, "{\"Name\":\"set_name\", \"Args\":[\"%s\"]}", buf);
+
+        ContractCall(&hd, "AmgLnRaGFLyvCPCEMHYJHooufT1c1pENTRGeV78WNPTxwQ2RYUW7", json, &account);
+        mbedtls_ecdsa_free(&account);
+
+        delay(2000);
+        queryContract(&hd, "AmgLnRaGFLyvCPCEMHYJHooufT1c1pENTRGeV78WNPTxwQ2RYUW7", "{\"Name\":\"hello\"}");
+
+      }
+      Serial.println("done.\n");
+      Serial.println("------------------------------------");
+      Serial.println("Type your value for new transaction:");
+    }
   }
-
-  queryContract(&hd, "AmgLnRaGFLyvCPCEMHYJHooufT1c1pENTRGeV78WNPTxwQ2RYUW7", "{\"Name\":\"hello\"}");
-
 
   sh2lib_free(&hd);
   Serial.println("Disconnected");
 
   vTaskDelete(NULL);
 }
- 
+
 void setup() {
   Serial.begin(115200);
 
@@ -1177,7 +1190,7 @@ void setup() {
   xTaskCreate(http2_task, "http2_task", (1024 * 32), NULL, 5, NULL);
 
 }
- 
+
 void loop() {
   vTaskDelete(NULL);
 }
