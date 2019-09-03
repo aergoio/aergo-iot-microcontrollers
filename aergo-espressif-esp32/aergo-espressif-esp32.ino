@@ -18,6 +18,8 @@ extern "C"{
 #include "sh2lib.h"
 }
 
+State account_state = State_init_zero;
+
 ///////////////////////////////////////////////////////////////////////////////////////////////////
 
 #if !defined(MBEDTLS_CONFIG_FILE)
@@ -381,7 +383,7 @@ bool encode_blob(pb_ostream_t *stream, const pb_field_t *field, void * const *ar
 
 uint8_t blockchain_id_hash[32];
 
-int handle_status_response(struct sh2lib_handle *handle, const char *data, size_t len, int flags) {
+int handle_blockchain_status_response(struct sh2lib_handle *handle, const char *data, size_t len, int flags) {
     if (len > 0) {
         int i, ret;
         BlockchainStatus status = BlockchainStatus_init_zero;
@@ -414,6 +416,61 @@ int handle_status_response(struct sh2lib_handle *handle, const char *data, size_
         /* Print the data contained in the message */
         //Serial.printf("Block number: %llu\n", block.header.blockNo);
         dump_buf("  + ChainIdHash: ", blockchain_id_hash, sizeof(blockchain_id_hash));
+
+    } else {
+        Serial.println("returned 0 bytes");
+    }
+
+    if (flags == DATA_RECV_FRAME_COMPLETE) {
+        request_finished = true;
+        Serial.println("COMPLETE FRAME RECEIVED");
+    } else if (flags == DATA_RECV_RST_STREAM) {
+        request_finished = true;
+        Serial.println("STREAM CLOSED");
+    }
+    return 0;
+}
+
+int handle_account_state_response(struct sh2lib_handle *handle, const char *data, size_t len, int flags) {
+    if (len > 0) {
+        int i, ret;
+        //State state = State_init_zero;
+        account_state = State_init_zero;
+
+        //Serial.printf("returned %d bytes: %.*s\n", len, len, data);
+        Serial.printf("returned %d bytes: ", len);
+        for(i=0; i<len; i++){
+          Serial.printf(" %02x", data[i]);
+          if(i % 16 == 15) Serial.println("");
+        }
+        Serial.println("");
+
+        /* Create a stream that reads from the buffer */
+        pb_istream_t stream = pb_istream_from_buffer((const unsigned char *)&data[5], len-5);
+
+        /* Set the callback functions */
+
+        //state.balance.arg = &balance;
+        //state.balance.funcs.decode = &read_varuint64;
+
+        //struct blob bb { .ptr = storageRoot, .size = 32 };
+        //state.storageRoot.arg = &bb;
+        //state.storageRoot.funcs.decode = &read_varuint64;
+
+        /* Now we are ready to decode the message */
+        ret = pb_decode(&stream, State_fields, &account_state);
+
+        /* Check for errors... */
+        if (!ret) {
+            Serial.printf("Decoding failed: %s\n", PB_GET_ERROR(&stream));
+            return 1;
+        }
+
+        //account_nonce = state.nonce;
+
+        /* Print the data contained in the message */
+        Serial.printf("Account Nonce: %llu\n", account_state.nonce);
+        //dump_buf("  + ChainIdHash: ", storageRoot, sizeof(storageRoot));
 
     } else {
         Serial.println("returned 0 bytes");
@@ -782,7 +839,10 @@ bool EncodeContractCall(uint8_t *buffer, size_t *psize, char *contract_address, 
   struct txn txn;
   char out[64]={0};
 
-  txn.nonce = 1;  // TODO: retrieve the account's nonce
+  /* increment the account nonce */
+  account_state.nonce++;
+
+  txn.nonce = account_state.nonce;
   copy_ecdsa_address(account, txn.account, sizeof txn.account);
   decode_address(contract_address, strlen(contract_address), txn.recipient, sizeof(txn.recipient));
   txn.amount = 0;        // variable-length big integer
@@ -794,6 +854,7 @@ bool EncodeContractCall(uint8_t *buffer, size_t *psize, char *contract_address, 
 
   encode_address(txn.account, sizeof txn.account, out, sizeof out);
   Serial.printf("account address: %s\n", out);
+  Serial.printf("account nonce: %llu\n", account_state.nonce);
 
   if (sign_transaction(&txn, account) == false) {
     return false;
@@ -817,6 +878,53 @@ bool EncodeQuery(uint8_t *buffer, size_t *psize, char *contract_address, char *q
 
   /* Now we are ready to decode the message */
   bool status = pb_encode(&stream, Query_fields, &message);
+  if (!status) {
+    Serial.printf("Encoding failed: %s\n", PB_GET_ERROR(&stream));
+    return false;
+  }
+
+  buffer[0] = 0;  // no compression
+  size32 = stream.bytes_written;
+  copy_be32((uint32_t*)&buffer[1], &size32);  // insert the size in the stream as big endian 32-bit integer
+  size32 += 5;
+
+  Serial.print("Message Length: ");
+  Serial.println(size32);
+  Serial.print("Message: ");
+  for(int i = 0; i<size32; i++){
+    Serial.printf("%02X",buffer[i]);
+  }
+  Serial.println("");
+
+  *psize = size32;
+  return true;
+}
+
+bool EncodeAccountAddress(uint8_t *buffer, size_t *psize, mbedtls_ecdsa_context *account) {
+  SingleBytes message = SingleBytes_init_zero;
+  uint32_t size32;
+
+/*
+  char out[64]={0};
+
+  copy_ecdsa_address(account, txn.account, sizeof txn.account);
+
+  encode_address(txn.account, sizeof txn.account, out, sizeof out);
+  Serial.printf("account address: %s\n", out);
+
+  return encode_xxx(buffer, psize, &txn);
+
+*/
+
+  /* Create a stream that writes to the buffer */
+  pb_ostream_t stream = pb_ostream_from_buffer(&buffer[5], *psize - 5);
+
+  /* Set the callback functions */
+  message.value.funcs.encode = &pb_encode_ecdsa_address;
+  message.value.arg = account;
+
+  /* Now we are ready to decode the message */
+  bool status = pb_encode(&stream, SingleBytes_fields, &message);
   if (!status) {
     Serial.printf("Encoding failed: %s\n", PB_GET_ERROR(&stream));
     return false;
@@ -996,7 +1104,18 @@ void requestBlockchainStatus(struct sh2lib_handle *hd){
 
   size = sizeof(buffer);
   if (EncodeEmptyMessage(buffer, &size)){
-    send_grpc_request(hd, "Blockchain", buffer, size, handle_status_response);
+    send_grpc_request(hd, "Blockchain", buffer, size, handle_blockchain_status_response);
+  }
+
+}
+
+void requestAccountState(struct sh2lib_handle *hd, mbedtls_ecdsa_context *account){
+  uint8_t buffer[128];
+  size_t size;
+
+  size = sizeof(buffer);
+  if (EncodeAccountAddress(buffer, &size, account)){
+    send_grpc_request(hd, "GetState", buffer, size, handle_account_state_response);
   }
 
 }
@@ -1027,7 +1146,10 @@ void http2_task(void *args)
   mbedtls_ecdsa_context account;
   mbedtls_ecdsa_init(&account);
   int rc = get_private_key(&account);
-  ContractCall(&hd, "AmgLnRaGFLyvCPCEMHYJHooufT1c1pENTRGeV78WNPTxwQ2RYUW7", "{\"Name\":\"set_name\", \"Args\":[\"ESP32\"]}", &account);
+
+  requestAccountState(&hd, &account);
+
+  ContractCall(&hd, "AmgLnRaGFLyvCPCEMHYJHooufT1c1pENTRGeV78WNPTxwQ2RYUW7", "{\"Name\":\"set_name\", \"Args\":[\"New test\"]}", &account);
   mbedtls_ecdsa_free(&account);
   }
 
@@ -1059,4 +1181,3 @@ void setup() {
 void loop() {
   vTaskDelete(NULL);
 }
-
