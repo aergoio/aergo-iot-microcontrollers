@@ -16,8 +16,6 @@ extern "C" {
 #include "account.h"
 }
 
-State account_state = State_init_zero;
-
 ///////////////////////////////////////////////////////////////////////////////////////////////////
 
 #if defined(DEBUG_MESSAGES)
@@ -443,11 +441,12 @@ int handle_blockchain_status_response(struct sh2lib_handle *handle, const char *
     return 0;
 }
 
+aergo_account *arg_aergo_account;
+
 int handle_account_state_response(struct sh2lib_handle *handle, const char *data, size_t len, int flags) {
     if (len > 0) {
         int i, ret;
-        //State state = State_init_zero;
-        account_state = State_init_zero;
+        State account_state = State_init_zero;
 
         DEBUG_PRINT_BUFFER("returned", data, len);
 
@@ -472,7 +471,8 @@ int handle_account_state_response(struct sh2lib_handle *handle, const char *data
             return 1;
         }
 
-        //account_nonce = state.nonce;
+        arg_aergo_account->init = true;
+        arg_aergo_account->nonce = account_state.nonce;
 
         /* Print the data contained in the message */
         DEBUG_PRINTF("Account Nonce: %llu\n", account_state.nonce);
@@ -820,15 +820,15 @@ bool encode_transaction(uint8_t *buffer, size_t *psize, struct txn *txn) {
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////
 
-bool EncodeContractCall(uint8_t *buffer, size_t *psize, char *contract_address, char *call_info, mbedtls_ecdsa_context *account) {
+bool EncodeContractCall(uint8_t *buffer, size_t *psize, char *contract_address, char *call_info, aergo_account *account) {
   struct txn txn;
   char out[64]={0};
 
   /* increment the account nonce */
-  account_state.nonce++;
+  account->nonce++;
 
-  txn.nonce = account_state.nonce;
-  copy_ecdsa_address(account, txn.account, sizeof txn.account);
+  txn.nonce = account->nonce;
+  copy_ecdsa_address(&account->keypair, txn.account, sizeof txn.account);
   decode_address(contract_address, strlen(contract_address), txn.recipient, sizeof(txn.recipient));
   txn.amount = 0;        // variable-length big integer
   txn.payload = call_info;
@@ -839,9 +839,9 @@ bool EncodeContractCall(uint8_t *buffer, size_t *psize, char *contract_address, 
 
   encode_address(txn.account, sizeof txn.account, out, sizeof out);
   DEBUG_PRINTF("account address: %s\n", out);
-  DEBUG_PRINTF("account nonce: %llu\n", account_state.nonce);
+  DEBUG_PRINTF("account nonce: %llu\n", account->nonce);
 
-  if (sign_transaction(&txn, account) == false) {
+  if (sign_transaction(&txn, &account->keypair) == false) {
     return false;
   }
 
@@ -1020,8 +1020,14 @@ void ContractCall(aergo *instance, char *contract_address, char *call_info, aerg
 
   if (check_blockchain_id_hash(instance) == false) return;
 
+  // check if nonce was retrieved
+  if ( !account->init ){
+    if ( requestAccountState(instance, account) == false ) return;  // false;
+  }
+
   size = sizeof(buffer);
-  if (EncodeContractCall(buffer, &size, contract_address, call_info, &account->keypair)){
+  if (EncodeContractCall(buffer, &size, contract_address, call_info, account)){
+    arg_aergo_account = account;
     send_grpc_request(&instance->hd, "CommitTX", buffer, size, handle_contract_call_response);
   }
 
@@ -1071,12 +1077,15 @@ void requestBlockchainStatus(aergo *instance){
 
 }
 
-void requestAccountState(aergo *instance, aergo_account *account){
+bool requestAccountState(aergo *instance, aergo_account *account){
   uint8_t buffer[128];
   size_t size;
 
+  account->init = false;
+
   size = sizeof(buffer);
   if (EncodeAccountAddress(buffer, &size, &account->keypair)){
+    arg_aergo_account = account;
     send_grpc_request(&instance->hd, "GetState", buffer, size, handle_account_state_response);
   }
 
@@ -1085,8 +1094,7 @@ void requestAccountState(aergo *instance, aergo_account *account){
   copy_ecdsa_address(&account->keypair, buffer, sizeof buffer);
   encode_address(buffer, AddressLength, account->address, sizeof account->address);
 
-  account->nonce = account_state.nonce;
-
+  return account->init;
 }
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////

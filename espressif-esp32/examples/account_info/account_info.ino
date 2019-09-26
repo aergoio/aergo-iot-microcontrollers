@@ -20,12 +20,16 @@ void http2_task(void *args)
 
   int rc = get_private_key(&account);
 
-  requestAccountState(&instance, &account);
-
-  Serial.println("");
-  Serial.println("------------------------------------");
-  Serial.printf("Account address: %s\n", account.address);
-  Serial.printf("Account nonce: %d\n", account.nonce);
+  if (requestAccountState(&instance, &account) == true) {
+    Serial.println("");
+    Serial.println("------------------------------------");
+    Serial.printf("Account address: %s\n", account.address);
+    Serial.printf("Account nonce: %d\n", account.nonce);
+    Serial.println("------------------------------------");
+    Serial.println("");
+  } else {
+    Serial.println("FAILED to retrieve the account state");
+  }
 
   aergo_free_account(&account);
   aergo_free(&instance);
