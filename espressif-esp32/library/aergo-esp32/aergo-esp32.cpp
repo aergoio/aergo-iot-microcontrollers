@@ -399,7 +399,7 @@ bool encode_blob(pb_ostream_t *stream, const pb_field_t *field, void * const *ar
 // HTTP2 REQUEST CALLBACKS
 ///////////////////////////////////////////////////////////////////////////////////////////////////
 
-uint8_t blockchain_id_hash[32];
+uint8_t blockchain_id_hash[32] = {0};
 
 int handle_blockchain_status_response(struct sh2lib_handle *handle, const char *data, size_t len, int flags) {
     if (len > 0) {
@@ -1001,6 +1001,15 @@ void send_grpc_request(struct sh2lib_handle *hd, char *service, uint8_t *buffer,
   DEBUG_PRINTLN("Request done. returning");
 }
 
+bool check_blockchain_id_hash(aergo *instance) {
+
+  if (blockchain_id_hash[0] == 0) {
+    requestBlockchainStatus(instance);
+  }
+
+  return (blockchain_id_hash[0] != 0);
+}
+
 ///////////////////////////////////////////////////////////////////////////////////////////////////
 // EXPORTED FUNCTIONS
 ///////////////////////////////////////////////////////////////////////////////////////////////////
@@ -1008,6 +1017,8 @@ void send_grpc_request(struct sh2lib_handle *hd, char *service, uint8_t *buffer,
 void ContractCall(aergo *instance, char *contract_address, char *call_info, aergo_account *account){
   uint8_t buffer[1024];
   size_t size;
+
+  if (check_blockchain_id_hash(instance) == false) return;
 
   size = sizeof(buffer);
   if (EncodeContractCall(buffer, &size, contract_address, call_info, &account->keypair)){
