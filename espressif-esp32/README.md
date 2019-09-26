@@ -14,22 +14,10 @@ blockchain on Espressif ESP32 microcontrollers.
 
 Install the requirements above.
 
-Create a sub-folder named `nanopb` under the Arduino libraries folder.
+Copy the folders `aergo-esp32` and `nanopb` to the Arduino's `libraries` folder.
 
-Copy there the files bellow:
-
-* pb.h
-* pb_common.h
-* pb_common.c
-* pb_encode.h
-* pb_encode.c
-* pb_decode.h
-* pb_decode.c
-
-You can find detailed instructions on coppying these files [here](https://techtutorialsx.com/2018/10/19/esp32-esp8266-arduino-protocol-buffers/)
-
-Open the `aergo-espressif-esp32.ino` file, modify the WiFi credentials,
-compile and upload to an ESP32 device.
+Open some of the examples with the Arduino IDE, modify the WiFi credentials and
+upload it to an ESP32 device.
 
 ## Security
 
