@@ -1,9 +1,8 @@
 #include <dummy.h>
 
-const char* ssid = "<<<include>>>";
-const char* password =  "<<<include>>>";
-
 #include "WiFi.h"
+
+#include "aergo-esp32.h"
 
 #include "pb_common.h"
 #include "pb.h"
@@ -15,7 +14,7 @@ const char* password =  "<<<include>>>";
 extern "C"{
 #include "endianess.h"
 #include "account.h"
-#include "sh2lib.h"
+//#include "sh2lib.h"
 }
 
 State account_state = State_init_zero;
@@ -66,7 +65,7 @@ static int ecdsa_rand(void *rng_state, unsigned char *output, size_t len){
     return 0;
 }
 
-#include "EEPROM.h"
+#include <EEPROM.h>
 
 #define EACH         64
 #define EEPROM_SIZE  (4 * EACH) + 2
@@ -1042,155 +1041,78 @@ void send_grpc_request(struct sh2lib_handle *hd, char *service, uint8_t *buffer,
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////
 
-void ContractCall(struct sh2lib_handle *hd, char *contract_address, char *call_info, mbedtls_ecdsa_context *account){
+void ContractCall(aergo *instance, char *contract_address, char *call_info, mbedtls_ecdsa_context *account){
   uint8_t buffer[1024];
   size_t size;
 
   size = sizeof(buffer);
   if (EncodeContractCall(buffer, &size, contract_address, call_info, account)){
-    send_grpc_request(hd, "CommitTX", buffer, size, handle_contract_call_response);
+    send_grpc_request(&instance->hd, "CommitTX", buffer, size, handle_contract_call_response);
   }
 
 }
 
-void queryContract(struct sh2lib_handle *hd, char *contract_address, char *query_info){
+void queryContract(aergo *instance, char *contract_address, char *query_info){
   uint8_t buffer[256];
   size_t size;
 
   size = sizeof(buffer);
   if (EncodeQuery(buffer, &size, contract_address, query_info)){
-    send_grpc_request(hd, "QueryContract", buffer, size, handle_query_response);
+    send_grpc_request(&instance->hd, "QueryContract", buffer, size, handle_query_response);
   }
 
 }
 
-void requestBlock(struct sh2lib_handle *hd, uint64_t blockNo){
+void requestBlock(aergo *instance, uint64_t blockNo){
   uint8_t buffer[128];
   size_t size;
 
   size = sizeof(buffer);
   if (EncodeBlockNo(buffer, &size, blockNo)){
-    send_grpc_request(hd, "GetBlockMetadata", buffer, size, handle_post_response);
+    send_grpc_request(&instance->hd, "GetBlockMetadata", buffer, size, handle_post_response);
   }
 
 }
 
-void requestBlockStream(struct sh2lib_handle *hd){
+void requestBlockStream(aergo *instance){
   uint8_t buffer[128];
   size_t size;
 
   size = sizeof(buffer);
   if (EncodeEmptyMessage(buffer, &size)){
-    send_grpc_request(hd, "ListBlockStream", buffer, size, handle_post_response);
+    send_grpc_request(&instance->hd, "ListBlockStream", buffer, size, handle_post_response);
   }
 
 }
 
-void requestBlockchainStatus(struct sh2lib_handle *hd){
+void requestBlockchainStatus(aergo *instance){
   uint8_t buffer[128];
   size_t size;
 
   size = sizeof(buffer);
   if (EncodeEmptyMessage(buffer, &size)){
-    send_grpc_request(hd, "Blockchain", buffer, size, handle_blockchain_status_response);
+    send_grpc_request(&instance->hd, "Blockchain", buffer, size, handle_blockchain_status_response);
   }
 
 }
 
-void requestAccountState(struct sh2lib_handle *hd, mbedtls_ecdsa_context *account){
+void requestAccountState(aergo *instance, mbedtls_ecdsa_context *account){
   uint8_t buffer[128];
   size_t size;
 
   size = sizeof(buffer);
   if (EncodeAccountAddress(buffer, &size, account)){
-    send_grpc_request(hd, "GetState", buffer, size, handle_account_state_response);
+    send_grpc_request(&instance->hd, "GetState", buffer, size, handle_account_state_response);
   }
 
 }
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////
 
-void http2_task(void *args)
-{
-  struct sh2lib_handle hd;
-
-  //if (sh2lib_connect(&hd, "https://testnet-api.aergo.io") != ESP_OK) {
-  //if (sh2lib_connect(&hd, "https://mainnet-api.aergo.io") != ESP_OK) {
-  if (sh2lib_connect(&hd, "http://testnet-api.aergo.io:7845") != ESP_OK) {
-    Serial.println("Error connecting to HTTP2 server");
-    vTaskDelete(NULL);
-  }
-
-  Serial.printf("Connected. hostname=%s\n", hd.hostname);
-
-  //requestBlockStream(&hd);
-  //requestBlock(&hd, 5447272);
-
-  requestBlockchainStatus(&hd);
-
-
-  mbedtls_ecdsa_context account;
-  mbedtls_ecdsa_init(&account);
-  int rc = get_private_key(&account);
-  requestAccountState(&hd, &account);
-
-  Serial.println("");
-  Serial.println("------------------------------------");
-  Serial.println("Type your value for new transaction:");
-  while(1){
-    if(Serial.available() > 0){
-      String str = Serial.readStringUntil('\n');
-      int len = str.length();
-      if( len > 63 ){
-        Serial.println("your value is too long! max=63");
-      }else{
-        char buf[64];
-        str.toCharArray(buf, 64);
-        while( len>0 && (buf[len-1]=='\n' || buf[len-1]=='\r') ){
-          len--;
-          buf[len] = 0;
-        }
-        if( strcmp(buf,"q")==0 || strcmp(buf,"Q")==0 ) break;
-        Serial.printf("you typed: %s\n", buf);
-
-        char json[128];
-        sprintf(json, "{\"Name\":\"set_name\", \"Args\":[\"%s\"]}", buf);
-
-        ContractCall(&hd, "AmgLnRaGFLyvCPCEMHYJHooufT1c1pENTRGeV78WNPTxwQ2RYUW7", json, &account);
-
-        delay(2000);
-        queryContract(&hd, "AmgLnRaGFLyvCPCEMHYJHooufT1c1pENTRGeV78WNPTxwQ2RYUW7", "{\"Name\":\"hello\"}");
-
-      }
-      Serial.println("done.\n");
-      Serial.println("------------------------------------");
-      Serial.println("Type your value for new transaction:");
-    }
-  }
-
-  mbedtls_ecdsa_free(&account);
-  sh2lib_free(&hd);
-  Serial.println("Disconnected");
-
-  vTaskDelete(NULL);
+int aergo_connect(aergo *instance, char *host) {
+  return sh2lib_connect(&instance->hd, host);  // ESP_OK
 }
 
-void setup() {
-  Serial.begin(115200);
-
-  WiFi.begin(ssid, password);
-
-  while (WiFi.status() != WL_CONNECTED) {
-    delay(1000);
-    Serial.println("Connecting to WiFi...");
-  }
-
-  Serial.println("Done. Starting HTTP2 connection...");
-
-  xTaskCreate(http2_task, "http2_task", (1024 * 32), NULL, 5, NULL);
-
-}
-
-void loop() {
-  vTaskDelete(NULL);
+void aergo_free(aergo *instance) {
+  sh2lib_free(&instance->hd);
 }
