@@ -22,15 +22,20 @@ void http2_task(void *args)
 
   requestBlockchainStatus(&instance);
 
-  requestBlockStream(&instance);
+  //requestBlockStream(&instance);
   //requestBlock(&instance, 5447272);
 
-#if 0
+
   aergo_account account;
 
   int rc = get_private_key(&account);
 
   requestAccountState(&instance, &account);
+  Serial.println("");
+  Serial.println("------------------------------------");
+  Serial.printf("Account address: %s\n", account.address);
+  Serial.printf("Account nonce: %d\n", account.nonce);
+
 
   Serial.println("");
   Serial.println("------------------------------------");
@@ -67,9 +72,7 @@ void http2_task(void *args)
     }
   }
 
-  mbedtls_ecdsa_free(&account);
-#endif
-
+  aergo_free_account(&account);
   aergo_free(&instance);
   Serial.println("Disconnected");
 

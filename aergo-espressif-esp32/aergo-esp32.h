@@ -16,14 +16,19 @@ void aergo_free(aergo *instance);
 
 struct aergo_account {
   mbedtls_ecdsa_context keypair;
+  char address[64];
+  uint64_t nonce;
 };
 
+int get_private_key(aergo_account *account);
 
 void requestAccountState(aergo *instance, aergo_account *account);
 
 void ContractCall(aergo *instance, char *contract_address, char *call_info, aergo_account *account);
 
 void queryContract(aergo *instance, char *contract_address, char *query_info);
+
+void aergo_free_account(aergo_account *account);
 
 
 void requestBlock(aergo *instance, uint64_t blockNo);

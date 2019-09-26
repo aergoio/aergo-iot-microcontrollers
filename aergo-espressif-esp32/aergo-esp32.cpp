@@ -1110,6 +1110,13 @@ void requestAccountState(aergo *instance, aergo_account *account){
     send_grpc_request(&instance->hd, "GetState", buffer, size, handle_account_state_response);
   }
 
+  // copy values to the account structure
+
+  copy_ecdsa_address(&account->keypair, buffer, sizeof buffer);
+  encode_address(buffer, AddressLength, account->address, sizeof account->address);
+
+  account->nonce = account_state.nonce;
+
 }
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////
@@ -1120,4 +1127,8 @@ int aergo_connect(aergo *instance, char *host) {
 
 void aergo_free(aergo *instance) {
   sh2lib_free(&instance->hd);
+}
+
+void aergo_free_account(aergo_account *account) {
+  mbedtls_ecdsa_free(&account->keypair);
 }
