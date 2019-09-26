@@ -1,17 +1,15 @@
-//#include <aergo-esp32.h>
+#include <aergo-esp32.h>
+#include "WiFi.h"
 
 const char* ssid = "<<<include>>>";
 const char* password =  "<<<include>>>";
-
-#include "WiFi.h"
-
-#include "aergo-esp32.h"
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////
 
 void http2_task(void *args)
 {
-  struct aergo instance;
+  aergo instance;
+  aergo_account account;
 
   if (aergo_connect(&instance, "http://testnet-api.aergo.io:7845") != ESP_OK) {
     Serial.println("Error connecting to HTTP2 server");
@@ -20,13 +18,6 @@ void http2_task(void *args)
 
   Serial.println("Connected");
 
-  requestBlockchainStatus(&instance);
-
-  //requestBlockStream(&instance);
-  //requestBlock(&instance, 5447272);
-
-
-  aergo_account account;
 
   int rc = get_private_key(&account);
 
