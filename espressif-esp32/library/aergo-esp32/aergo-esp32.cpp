@@ -11,15 +11,26 @@
 
 #include "blockchain.pb.h"
 
-extern "C"{
+extern "C" {
 #include "endianess.h"
 #include "account.h"
-//#include "sh2lib.h"
 }
 
 State account_state = State_init_zero;
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////
+
+#if defined(DEBUG_MESSAGES)
+#define DEBUG_PRINT      Serial.print
+#define DEBUG_PRINTF     Serial.printf
+#define DEBUG_PRINTLN    Serial.println
+#define DEBUG_PRINT_BUFFER print_buffer
+#else
+#define DEBUG_PRINT(...)
+#define DEBUG_PRINTF(...)
+#define DEBUG_PRINTLN(...)
+#define DEBUG_PRINT_BUFFER(...)
+#endif
 
 #if !defined(MBEDTLS_CONFIG_FILE)
 #include "mbedtls/config.h"
@@ -33,7 +44,7 @@ State account_state = State_init_zero;
 #include <stdio.h>
 #include <stdlib.h>
 #define mbedtls_exit       exit
-#define mbedtls_printf     Serial.printf
+#define mbedtls_printf     DEBUG_PRINTF
 //#define mbedtls_snprintf   Serial.snprintf
 #define mbedtls_free       free
 #define mbedtls_exit            exit
@@ -48,22 +59,36 @@ State account_state = State_init_zero;
 static int ecdsa_rand(void *rng_state, unsigned char *output, size_t len){
 
 #if 0
-    while( len > 0 ){
-        int rnd;
-        size_t use_len = len;
-        if( use_len > sizeof(int) )
-            use_len = sizeof(int);
+  while( len > 0 ){
+    int rnd;
+    size_t use_len = len;
+    if( use_len > sizeof(int) )
+      use_len = sizeof(int);
 
-        rnd = rand();
-        memcpy( output, &rnd, use_len );
-        output += use_len;
-        len -= use_len;
-    }
+    rnd = rand();
+    memcpy( output, &rnd, use_len );
+    output += use_len;
+    len -= use_len;
+  }
 #endif
 
-    esp_fill_random(output, len);  /* better randomness when WiFi or Bluetooth is enabled */
-    return 0;
+  esp_fill_random(output, len);  /* better randomness when WiFi or Bluetooth is enabled */
+  return 0;
 }
+
+static void print_buffer(const char *title, unsigned char *data, size_t len){
+  size_t i;
+  DEBUG_PRINTF("%s (%d bytes) ", title, len);
+  for(i=0; i<len; i++){
+    DEBUG_PRINTF(" %02x", data[i]);
+    if(i % 16 == 15) DEBUG_PRINTLN("");
+  }
+  DEBUG_PRINTLN("");
+}
+
+///////////////////////////////////////////////////////////////////////////////////////////////////
+// PRIVATE KEY STORAGE
+///////////////////////////////////////////////////////////////////////////////////////////////////
 
 #include <EEPROM.h>
 
@@ -83,12 +108,12 @@ int get_private_key(aergo_account *account){
 
   /* read data from EPROM */
   if (!EEPROM.begin(EEPROM_SIZE)){
-    Serial.println("failed to initialise EEPROM");
+    DEBUG_PRINTLN("failed to initialise EEPROM");
     return -1;
   }
 
   if( EEPROM.read(0)!=53 || EEPROM.read(1)!=79 ){
-    Serial.println("invalid values at EEPROM. generating a new private key");
+    DEBUG_PRINTLN("invalid values at EEPROM. generating a new private key");
     goto loc_notset;
   }
   base = 2;
@@ -102,28 +127,28 @@ int get_private_key(aergo_account *account){
 
   rc = mbedtls_mpi_read_binary(&keypair->d, buf, EACH);
   if (rc) {
-    Serial.println("failed read private key. probably invalid. generating a new one");
+    DEBUG_PRINTLN("failed read private key. probably invalid. generating a new one");
     goto loc_notset;
   }
   rc = mbedtls_mpi_read_binary(&keypair->Q.X, &buf[EACH], EACH);
   if (rc) {
-    Serial.println("failed read public key X. probably invalid. generating a new one");
+    DEBUG_PRINTLN("failed read public key X. probably invalid. generating a new one");
     goto loc_notset;
   }
   rc = mbedtls_mpi_read_binary(&keypair->Q.Y, &buf[EACH*2], EACH);
   if (rc) {
-    Serial.println("failed read public key Y. probably invalid. generating a new one");
+    DEBUG_PRINTLN("failed read public key Y. probably invalid. generating a new one");
     goto loc_notset;
   }
   rc = mbedtls_mpi_read_binary(&keypair->Q.Z, &buf[EACH*3], EACH);
   if (rc) {
-    Serial.println("failed read public key Z. probably invalid. generating a new one");
+    DEBUG_PRINTLN("failed read public key Z. probably invalid. generating a new one");
     goto loc_notset;
   }
 
 
   if (rc) {
-    Serial.println("failed read private key. probably invalid. generating a new one");
+    DEBUG_PRINTLN("failed read private key. probably invalid. generating a new one");
     loc_notset:
 
     /* generate a new private key */
@@ -140,32 +165,23 @@ int get_private_key(aergo_account *account){
     rc = mbedtls_mpi_write_binary(&keypair->Q.Z, &buf[EACH*3], EACH);
     if (rc) return rc;
 
-    Serial.print("writting the private key to EEPROM.");
+    DEBUG_PRINT("writting the private key to EEPROM.");
     EEPROM.write(0, 53);
     EEPROM.write(1, 79);
     for (i=0; i<EEPROM_SIZE-2; i++) {
       EEPROM.write(i+2, buf[i]);
-      Serial.print(".");
+      DEBUG_PRINT(".");
     }
     EEPROM.commit();
-    Serial.println(" done");
+    DEBUG_PRINTLN(" done");
 
   }
 
   return 0;
 }
 
-static void dump_buf(const char *title, unsigned char *buf, size_t len){
-    size_t i;
-
-    mbedtls_printf("%s (%d bytes) ", title, len);
-    for( i = 0; i < len; i++ )
-        mbedtls_printf("%c%c", "0123456789ABCDEF" [buf[i] / 16],
-                       "0123456789ABCDEF" [buf[i] % 16] );
-    mbedtls_printf("\n");
-}
-
-
+///////////////////////////////////////////////////////////////////////////////////////////////////
+// DECODING
 ///////////////////////////////////////////////////////////////////////////////////////////////////
 
 bool request_finished = false;
@@ -181,7 +197,7 @@ struct blob {
 bool print_string(pb_istream_t *stream, const pb_field_t *field, void **arg){
     uint8_t buffer[1024] = {0};
 
-    Serial.printf("print_string stream->bytes_left=%d field=%p\n", stream->bytes_left, field);
+    DEBUG_PRINTF("print_string stream->bytes_left=%d field=%p\n", stream->bytes_left, field);
 
     /* We could read block-by-block to avoid the large buffer... */
     if (stream->bytes_left > sizeof(buffer) - 1)
@@ -193,49 +209,47 @@ bool print_string(pb_istream_t *stream, const pb_field_t *field, void **arg){
     /* Print the string, in format comparable with protoc --decode.
      * Format comes from the arg defined in main().
      */
-    Serial.printf("%s: %s\n", (char*)*arg, buffer);
+    DEBUG_PRINTF("%s: %s\n", (char*)*arg, buffer);
     return true;
 }
 
 bool read_string(pb_istream_t *stream, const pb_field_t *field, void **arg){
-    uint8_t buffer[1024] = {0};
+    struct blob *str = *(struct blob**)arg;
 
-    Serial.printf("print_string stream->bytes_left=%d field=%p\n", stream->bytes_left, field);
+    DEBUG_PRINTF("read_string arg=%p\n", str);
+    if (!str) return true;
+    DEBUG_PRINTF("read_string bytes_left=%d str->size=%d\n", stream->bytes_left, str->size);
 
     /* We could read block-by-block to avoid the large buffer... */
-    if (stream->bytes_left > sizeof(buffer) - 1)
+    if (stream->bytes_left > str->size){
+        DEBUG_PRINTF("FAILED! read_string\n");
+        return false;
+    }
+
+    if (!pb_read(stream, str->ptr, stream->bytes_left))
         return false;
 
-    if (!pb_read(stream, buffer, stream->bytes_left))
-        return false;
-
-    /* Print the string, in format comparable with protoc --decode.
-     * Format comes from the arg defined in main().
-     */
-    Serial.printf("%s: %s\n", (char*)*arg, buffer);
+    DEBUG_PRINTF("read_string ok\n");
     return true;
 }
 
 bool read_blob(pb_istream_t *stream, const pb_field_t *field, void **arg){
     struct blob *blob = *(struct blob**)arg;
 
-    Serial.printf("read_blob arg=%p\n", blob);
+    DEBUG_PRINTF("read_blob arg=%p\n", blob);
     if (!blob) return true;
-    Serial.printf("read_blob bytes_left=%d blob->size=%d\n", stream->bytes_left, blob->size);
+    DEBUG_PRINTF("read_blob bytes_left=%d blob->size=%d\n", stream->bytes_left, blob->size);
 
     /* We could read block-by-block to avoid the large buffer... */
     if (stream->bytes_left > blob->size){
-        Serial.printf("FAILED! read_blob\n");
+        DEBUG_PRINTF("FAILED! read_blob\n");
         return false;
     }
 
     if (!pb_read(stream, blob->ptr, stream->bytes_left))
         return false;
 
-    /* Print the string, in format comparable with protoc --decode.
-     * Format comes from the arg defined in main().
-     */
-    Serial.printf("read_blob ok\n");
+    DEBUG_PRINTF("read_blob ok\n");
     return true;
 }
 
@@ -245,7 +259,7 @@ bool print_blob(pb_istream_t *stream, const pb_field_t *field, void **arg)
     int len = stream->bytes_left;
     int i;
 
-    //Serial.printf("print_blob stream->bytes_left=%d field=%p\n", stream->bytes_left, field);
+    //DEBUG_PRINTF("print_blob stream->bytes_left=%d field=%p\n", stream->bytes_left, field);
 
     /* We could read block-by-block to avoid the large buffer... */
     if (stream->bytes_left > sizeof(buffer) - 1)
@@ -254,18 +268,14 @@ bool print_blob(pb_istream_t *stream, const pb_field_t *field, void **arg)
     if (!pb_read(stream, buffer, stream->bytes_left))
         return false;
 
-    /* Print the string, in format comparable with protoc --decode.
-     * Format comes from the arg defined in main().
-     */
-    Serial.print((char*)*arg);
-    Serial.printf(" (%d bytes): ", len);
-    for(i=0; i<len; i++){
-      Serial.printf("%02x", buffer[i]);
-    }
-    Serial.println("");
+    DEBUG_PRINT_BUFFER((char*)*arg, buffer, len);
 
     return true;
 }
+
+///////////////////////////////////////////////////////////////////////////////////////////////////
+// ENCODING
+///////////////////////////////////////////////////////////////////////////////////////////////////
 
 // https://github.com/nanopb/nanopb/blob/master/tests/callbacks/encode_callbacks.c
 
@@ -273,7 +283,7 @@ bool encode_fixed64(pb_ostream_t *stream, const pb_field_t *field, void * const 
     uint64_t value = **(uint64_t**)arg;
     uint64_t value2;
 
-    Serial.printf("encode_fixed64 - value=%llu\n", value);
+    DEBUG_PRINTF("encode_fixed64 - value=%llu\n", value);
 
     if (!pb_encode_tag_for_field(stream, field))
         return false;
@@ -290,7 +300,7 @@ bool encode_varuint64(pb_ostream_t *stream, const pb_field_t *field, void * cons
     uint8_t *ptr;
     size_t len;
 
-    Serial.printf("encode_varuint64 - value=%llu\n", value);
+    DEBUG_PRINTF("encode_varuint64 - value=%llu\n", value);
 
     if (!pb_encode_tag_for_field(stream, field))
         return false;
@@ -303,7 +313,7 @@ bool encode_varuint64(pb_ostream_t *stream, const pb_field_t *field, void * cons
     len = 8;
     while( *ptr==0 && len>1 ){ ptr++; len--; }
 
-    Serial.printf("encode_varuint64 - len=%u\n", len);
+    DEBUG_PRINTF("encode_varuint64 - len=%u\n", len);
 
     return pb_encode_string(stream, ptr, len);
 }
@@ -313,10 +323,10 @@ bool pb_encode_address(pb_ostream_t *stream, const pb_field_t *field, void * con
     char decoded[128];
     bool res;
 
-    Serial.printf("pb_encode_address '%s'\n", str);
+    DEBUG_PRINTF("pb_encode_address '%s'\n", str);
 
     if (strlen(str) != EncodedAddressLength) {
-      Serial.printf("Lenght of address is invalid: %d. It should be %d\n", strlen(str), EncodedAddressLength);
+      DEBUG_PRINTF("Lenght of address is invalid: %d. It should be %d\n", strlen(str), EncodedAddressLength);
     }
 
     res = decode_address(str, strlen(str), decoded, sizeof(decoded));
@@ -334,7 +344,7 @@ bool copy_ecdsa_address(mbedtls_ecdsa_context *account, uint8_t *buf, size_t buf
     ret = mbedtls_ecp_point_write_binary(&account->grp, &account->Q,
                 MBEDTLS_ECP_PF_COMPRESSED, &len, buf, bufsize);
 
-    Serial.printf("copy_ecdsa_address - ret=%d len=%d\n", ret, len);
+    DEBUG_PRINTF("copy_ecdsa_address - ret=%d len=%d\n", ret, len);
 
     return ret && (len == AddressLength);
 }
@@ -349,11 +359,11 @@ bool pb_encode_ecdsa_address(pb_ostream_t *stream, const pb_field_t *field, void
                 MBEDTLS_ECP_PF_COMPRESSED, &len, buf, sizeof buf);
 
     if( ret != 0 ){
-        Serial.printf("pb_encode_ecdsa_address - invalid account\n");
+        DEBUG_PRINTF("pb_encode_ecdsa_address - invalid account\n");
         return false;
     }
 
-    Serial.printf("pb_encode_ecdsa_address - len=%d\n", len);
+    DEBUG_PRINTF("pb_encode_ecdsa_address - len=%d\n", len);
 
     if (!pb_encode_tag_for_field(stream, field))
         return false;
@@ -364,7 +374,7 @@ bool pb_encode_ecdsa_address(pb_ostream_t *stream, const pb_field_t *field, void
 bool encode_string(pb_ostream_t *stream, const pb_field_t *field, void * const *arg) {
     char *str = *(char**)arg;
 
-    Serial.printf("encode_string '%s'\n", str);
+    DEBUG_PRINTF("encode_string '%s'\n", str);
 
     if (!pb_encode_tag_for_field(stream, field))
         return false;
@@ -375,7 +385,7 @@ bool encode_string(pb_ostream_t *stream, const pb_field_t *field, void * const *
 bool encode_blob(pb_ostream_t *stream, const pb_field_t *field, void * const *arg) {
     struct blob *blob = *(struct blob**)arg;
 
-    Serial.printf("encode_blob arg=%p\n", blob);
+    DEBUG_PRINTF("encode_blob arg=%p\n", blob);
     if (!blob) return true;
 
     if (!pb_encode_tag_for_field(stream, field))
@@ -385,6 +395,8 @@ bool encode_blob(pb_ostream_t *stream, const pb_field_t *field, void * const *ar
 }
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////
+// HTTP2 REQUEST CALLBACKS
+///////////////////////////////////////////////////////////////////////////////////////////////////
 
 uint8_t blockchain_id_hash[32];
 
@@ -393,13 +405,7 @@ int handle_blockchain_status_response(struct sh2lib_handle *handle, const char *
         int i, ret;
         BlockchainStatus status = BlockchainStatus_init_zero;
 
-        //Serial.printf("returned %d bytes: %.*s\n", len, len, data);
-        Serial.printf("returned %d bytes: ", len);
-        for(i=0; i<len; i++){
-          Serial.printf(" %02x", data[i]);
-          if(i % 16 == 15) Serial.println("");
-        }
-        Serial.println("");
+        DEBUG_PRINT_BUFFER("returned", data, len);
 
         /* Create a stream that reads from the buffer */
         pb_istream_t stream = pb_istream_from_buffer((const unsigned char *)&data[5], len-5);
@@ -414,24 +420,24 @@ int handle_blockchain_status_response(struct sh2lib_handle *handle, const char *
 
         /* Check for errors... */
         if (!ret) {
-            Serial.printf("Decoding failed: %s\n", PB_GET_ERROR(&stream));
+            DEBUG_PRINTF("Decoding failed: %s\n", PB_GET_ERROR(&stream));
             return 1;
         }
 
         /* Print the data contained in the message */
-        //Serial.printf("Block number: %llu\n", block.header.blockNo);
-        dump_buf("  + ChainIdHash: ", blockchain_id_hash, sizeof(blockchain_id_hash));
+        //DEBUG_PRINTF("Block number: %llu\n", block.header.blockNo);
+        DEBUG_PRINT_BUFFER("  + ChainIdHash: ", blockchain_id_hash, sizeof(blockchain_id_hash));
 
     } else {
-        Serial.println("returned 0 bytes");
+        DEBUG_PRINTLN("returned 0 bytes");
     }
 
     if (flags == DATA_RECV_FRAME_COMPLETE) {
         request_finished = true;
-        Serial.println("COMPLETE FRAME RECEIVED");
+        DEBUG_PRINTLN("COMPLETE FRAME RECEIVED");
     } else if (flags == DATA_RECV_RST_STREAM) {
         request_finished = true;
-        Serial.println("STREAM CLOSED");
+        DEBUG_PRINTLN("STREAM CLOSED");
     }
     return 0;
 }
@@ -442,13 +448,7 @@ int handle_account_state_response(struct sh2lib_handle *handle, const char *data
         //State state = State_init_zero;
         account_state = State_init_zero;
 
-        //Serial.printf("returned %d bytes: %.*s\n", len, len, data);
-        Serial.printf("returned %d bytes: ", len);
-        for(i=0; i<len; i++){
-          Serial.printf(" %02x", data[i]);
-          if(i % 16 == 15) Serial.println("");
-        }
-        Serial.println("");
+        DEBUG_PRINT_BUFFER("returned", data, len);
 
         /* Create a stream that reads from the buffer */
         pb_istream_t stream = pb_istream_from_buffer((const unsigned char *)&data[5], len-5);
@@ -467,26 +467,26 @@ int handle_account_state_response(struct sh2lib_handle *handle, const char *data
 
         /* Check for errors... */
         if (!ret) {
-            Serial.printf("Decoding failed: %s\n", PB_GET_ERROR(&stream));
+            DEBUG_PRINTF("Decoding failed: %s\n", PB_GET_ERROR(&stream));
             return 1;
         }
 
         //account_nonce = state.nonce;
 
         /* Print the data contained in the message */
-        Serial.printf("Account Nonce: %llu\n", account_state.nonce);
-        //dump_buf("  + ChainIdHash: ", storageRoot, sizeof(storageRoot));
+        DEBUG_PRINTF("Account Nonce: %llu\n", account_state.nonce);
+        //DEBUG_PRINT_BUFFER("  + ChainIdHash: ", storageRoot, sizeof(storageRoot));
 
     } else {
-        Serial.println("returned 0 bytes");
+        DEBUG_PRINTLN("returned 0 bytes");
     }
 
     if (flags == DATA_RECV_FRAME_COMPLETE) {
         request_finished = true;
-        Serial.println("COMPLETE FRAME RECEIVED");
+        DEBUG_PRINTLN("COMPLETE FRAME RECEIVED");
     } else if (flags == DATA_RECV_RST_STREAM) {
         request_finished = true;
-        Serial.println("STREAM CLOSED");
+        DEBUG_PRINTLN("STREAM CLOSED");
     }
     return 0;
 }
@@ -496,13 +496,7 @@ int handle_post_response(struct sh2lib_handle *handle, const char *data, size_t 
         int i, status;
         Block block = Block_init_zero;
 
-        //Serial.printf("returned %d bytes: %.*s\n", len, len, data);
-        Serial.printf("returned %d bytes: ", len);
-        for(i=0; i<len; i++){
-          Serial.printf(" %02x", data[i]);
-          if(i % 16 == 15) Serial.println("");
-        }
-        Serial.println("");
+        DEBUG_PRINT_BUFFER("returned", data, len);
 
         /* Create a stream that reads from the buffer */
         pb_istream_t stream = pb_istream_from_buffer((const unsigned char *)&data[5], len-5);
@@ -520,24 +514,24 @@ int handle_post_response(struct sh2lib_handle *handle, const char *data, size_t 
 
         /* Check for errors... */
         if (!status) {
-            Serial.printf("Decoding failed: %s\n", PB_GET_ERROR(&stream));
+            DEBUG_PRINTF("Decoding failed: %s\n", PB_GET_ERROR(&stream));
             return 1;
         }
 
         /* Print the data contained in the message */
-        Serial.printf("Block number: %llu\n", block.header.blockNo);
-        Serial.printf("Block timestamp: %llu\n", block.header.timestamp);
-        Serial.printf("Block confirms: %llu\n", block.header.confirms);
+        DEBUG_PRINTF("Block number: %llu\n", block.header.blockNo);
+        DEBUG_PRINTF("Block timestamp: %llu\n", block.header.timestamp);
+        DEBUG_PRINTF("Block confirms: %llu\n", block.header.confirms);
 
     } else {
-        Serial.println("returned 0 bytes");
+        DEBUG_PRINTLN("returned 0 bytes");
     }
 
     if (flags == DATA_RECV_FRAME_COMPLETE) {
-        Serial.println("COMPLETE FRAME RECEIVED");
+        DEBUG_PRINTLN("COMPLETE FRAME RECEIVED");
     } else if (flags == DATA_RECV_RST_STREAM) {
         request_finished = true;
-        Serial.println("STREAM CLOSED");
+        DEBUG_PRINTLN("STREAM CLOSED");
     }
     return 0;
 }
@@ -547,13 +541,7 @@ int handle_contract_call_response(struct sh2lib_handle *handle, const char *data
         int i, status;
         CommitResultList response = CommitResultList_init_zero;
 
-        //Serial.printf("returned %d bytes: %.*s\n", len, len, data);
-        Serial.printf("returned %d bytes: ", len);
-        for(i=0; i<len; i++){
-          Serial.printf(" %02x", data[i]);
-          if(i % 16 == 15) Serial.println("");
-        }
-        Serial.println("");
+        DEBUG_PRINT_BUFFER("returned", data, len);
 
         /* Create a stream that reads from the buffer */
         pb_istream_t stream = pb_istream_from_buffer((const unsigned char *)&data[5], len-5);
@@ -567,23 +555,23 @@ int handle_contract_call_response(struct sh2lib_handle *handle, const char *data
 
         /* Check for errors... */
         if (!status) {
-            Serial.printf("Decoding failed: %s\n", PB_GET_ERROR(&stream));
+            DEBUG_PRINTF("Decoding failed: %s\n", PB_GET_ERROR(&stream));
             return 1;
         }
 
         /* Print the data contained in the message */
-        //Serial.printf("response error status: %u\n", response.results.error);   TODO: fix this
+        //DEBUG_PRINTF("response error status: %u\n", response.results.error);   TODO: fix this
 
     } else {
-        Serial.println("returned 0 bytes");
+        DEBUG_PRINTLN("returned 0 bytes");
     }
 
     if (flags == DATA_RECV_FRAME_COMPLETE) {
         request_finished = true;
-        Serial.println("COMPLETE FRAME RECEIVED");
+        DEBUG_PRINTLN("COMPLETE FRAME RECEIVED");
     } else if (flags == DATA_RECV_RST_STREAM) {
         request_finished = true;
-        Serial.println("STREAM CLOSED");
+        DEBUG_PRINTLN("STREAM CLOSED");
     }
     return 0;
 }
@@ -593,13 +581,7 @@ int handle_query_response(struct sh2lib_handle *handle, const char *data, size_t
         int i, status;
         SingleBytes response = SingleBytes_init_zero;
 
-        //Serial.printf("returned %d bytes: %.*s\n", len, len, data);
-        Serial.printf("returned %d bytes: ", len);
-        for(i=0; i<len; i++){
-          Serial.printf(" %02x", data[i]);
-          if(i % 16 == 15) Serial.println("");
-        }
-        Serial.println("");
+        DEBUG_PRINT_BUFFER("returned", data, len);
 
         /* Create a stream that reads from the buffer */
         pb_istream_t stream = pb_istream_from_buffer((const unsigned char *)&data[5], len-5);
@@ -613,34 +595,36 @@ int handle_query_response(struct sh2lib_handle *handle, const char *data, size_t
 
         /* Check for errors... */
         if (!status) {
-            Serial.printf("Decoding failed: %s\n", PB_GET_ERROR(&stream));
+            DEBUG_PRINTF("Decoding failed: %s\n", PB_GET_ERROR(&stream));
             return 1;
         }
 
         /* Print the data contained in the message */
-        //Serial.printf("xxxxx: %llu\n", block.header.confirms);
+        //DEBUG_PRINTF("xxxxx: %llu\n", block.header.confirms);
 
     } else {
-        Serial.println("returned 0 bytes");
+        DEBUG_PRINTLN("returned 0 bytes");
     }
 
     if (flags == DATA_RECV_FRAME_COMPLETE) {
         request_finished = true;
-        Serial.println("COMPLETE FRAME RECEIVED");
+        DEBUG_PRINTLN("COMPLETE FRAME RECEIVED");
     } else if (flags == DATA_RECV_RST_STREAM) {
         request_finished = true;
-        Serial.println("STREAM CLOSED");
+        DEBUG_PRINTLN("STREAM CLOSED");
     }
     return 0;
 }
 
+///////////////////////////////////////////////////////////////////////////////////////////////////
+// HTTP2 SEND CALLBACK
 ///////////////////////////////////////////////////////////////////////////////////////////////////
 
 int send_post_data(struct sh2lib_handle *handle, char *buf, size_t length, uint32_t *data_flags) {
     int copylen = send_size;
     int i;
 
-    Serial.printf("send_post_data length=%d\n", length);
+    DEBUG_PRINTF("send_post_data length=%d\n", length);
 
     if (copylen <= length) {
         memcpy(buf, to_send, copylen);
@@ -648,16 +632,14 @@ int send_post_data(struct sh2lib_handle *handle, char *buf, size_t length, uint3
         copylen = 0;
     }
 
-    Serial.printf("Sending %d bytes... ", copylen);
-    for(i=0; i<copylen; i++){
-      Serial.printf("%02x", buf[i]);
-    }
-    Serial.println("");
+    DEBUG_PRINT_BUFFER("sending", buf, copylen);
 
     (*data_flags) |= NGHTTP2_DATA_FLAG_EOF;
     return copylen;
 }
 
+///////////////////////////////////////////////////////////////////////////////////////////////////
+// AERGO SPECIFIC
 ///////////////////////////////////////////////////////////////////////////////////////////////////
 
 struct txn {
@@ -677,6 +659,8 @@ struct txn {
 bool encode_bigint(uint8_t **pptr, uint64_t value){
 
   // TODO: encode the amount
+  //       it can use the bignum (mpi) from mbedtls
+
   //len = xxx(txn->amount);
   //memcpy(ptr, txn->amount, len); ptr += len;
 
@@ -733,7 +717,7 @@ bool sign_transaction(struct txn *txn, mbedtls_ecdsa_context *account){
   calculate_tx_hash(txn, hash, false);
 
   mbedtls_printf("sign_transaction\n");
-  dump_buf("  + Hash: ", hash, sizeof(hash));
+  DEBUG_PRINT_BUFFER("  + Hash: ", hash, sizeof(hash));
 
   // Sign the message hash
   ret = mbedtls_ecdsa_write_signature(account, MBEDTLS_MD_SHA256,
@@ -741,9 +725,9 @@ bool sign_transaction(struct txn *txn, mbedtls_ecdsa_context *account){
                                       txn->sign, &txn->sig_len,
                                       ecdsa_rand, NULL);
 
-  Serial.printf("ret_write_sign = %d\n", ret);
+  DEBUG_PRINTF("ret_write_sign = %d\n", ret);
   mbedtls_printf( " ok (signature length = %u)\n", (unsigned int) txn->sig_len );
-  dump_buf("  + Signature: ", txn->sign, txn->sig_len);
+  DEBUG_PRINT_BUFFER("  + Signature: ", txn->sign, txn->sig_len);
 
   return (ret == 0);
 }
@@ -799,7 +783,7 @@ bool encode_1_transaction(pb_ostream_t *stream, const pb_field_t *field, void * 
   /* Now we are ready to decode the message */
   bool status = pb_encode_submessage(stream, Tx_fields, &message);
   if (!status) {
-    Serial.printf("Encoding failed: %s\n", PB_GET_ERROR(stream));
+    DEBUG_PRINTF("Encoding failed: %s\n", PB_GET_ERROR(stream));
   }
   return status;
 }
@@ -818,7 +802,7 @@ bool encode_transaction(uint8_t *buffer, size_t *psize, struct txn *txn) {
   /* Now we are ready to decode the message */
   bool status = pb_encode(&stream, TxList_fields, &message);
   if (!status) {
-    Serial.printf("Encoding failed: %s\n", PB_GET_ERROR(&stream));
+    DEBUG_PRINTF("Encoding failed: %s\n", PB_GET_ERROR(&stream));
     return false;
   }
 
@@ -827,13 +811,7 @@ bool encode_transaction(uint8_t *buffer, size_t *psize, struct txn *txn) {
   copy_be32((uint32_t*)&buffer[1], &size32);  // insert the size in the stream as big endian 32-bit integer
   size32 += 5;
 
-  Serial.print("Message Length: ");
-  Serial.println(size32);
-  Serial.print("Message: ");
-  for(int i = 0; i<size32; i++){
-    Serial.printf("%02X",buffer[i]);
-  }
-  Serial.println("");
+  DEBUG_PRINT_BUFFER("Message", buffer, size32);
 
   *psize = size32;
   return true;
@@ -857,8 +835,8 @@ bool EncodeContractCall(uint8_t *buffer, size_t *psize, char *contract_address, 
   txn.chainIdHash = blockchain_id_hash;
 
   encode_address(txn.account, sizeof txn.account, out, sizeof out);
-  Serial.printf("account address: %s\n", out);
-  Serial.printf("account nonce: %llu\n", account_state.nonce);
+  DEBUG_PRINTF("account address: %s\n", out);
+  DEBUG_PRINTF("account nonce: %llu\n", account_state.nonce);
 
   if (sign_transaction(&txn, account) == false) {
     return false;
@@ -883,7 +861,7 @@ bool EncodeQuery(uint8_t *buffer, size_t *psize, char *contract_address, char *q
   /* Now we are ready to decode the message */
   bool status = pb_encode(&stream, Query_fields, &message);
   if (!status) {
-    Serial.printf("Encoding failed: %s\n", PB_GET_ERROR(&stream));
+    DEBUG_PRINTF("Encoding failed: %s\n", PB_GET_ERROR(&stream));
     return false;
   }
 
@@ -892,13 +870,7 @@ bool EncodeQuery(uint8_t *buffer, size_t *psize, char *contract_address, char *q
   copy_be32((uint32_t*)&buffer[1], &size32);  // insert the size in the stream as big endian 32-bit integer
   size32 += 5;
 
-  Serial.print("Message Length: ");
-  Serial.println(size32);
-  Serial.print("Message: ");
-  for(int i = 0; i<size32; i++){
-    Serial.printf("%02X",buffer[i]);
-  }
-  Serial.println("");
+  DEBUG_PRINT_BUFFER("Message", buffer, size32);
 
   *psize = size32;
   return true;
@@ -918,7 +890,7 @@ bool EncodeAccountAddress(uint8_t *buffer, size_t *psize, mbedtls_ecdsa_context 
   /* Now we are ready to decode the message */
   bool status = pb_encode(&stream, SingleBytes_fields, &message);
   if (!status) {
-    Serial.printf("Encoding failed: %s\n", PB_GET_ERROR(&stream));
+    DEBUG_PRINTF("Encoding failed: %s\n", PB_GET_ERROR(&stream));
     return false;
   }
 
@@ -927,13 +899,7 @@ bool EncodeAccountAddress(uint8_t *buffer, size_t *psize, mbedtls_ecdsa_context 
   copy_be32((uint32_t*)&buffer[1], &size32);  // insert the size in the stream as big endian 32-bit integer
   size32 += 5;
 
-  Serial.print("Message Length: ");
-  Serial.println(size32);
-  Serial.print("Message: ");
-  for(int i = 0; i<size32; i++){
-    Serial.printf("%02X",buffer[i]);
-  }
-  Serial.println("");
+  DEBUG_PRINT_BUFFER("Message", buffer, size32);
 
   *psize = size32;
   return true;
@@ -955,7 +921,7 @@ bool EncodeBlockNo(uint8_t *buffer, size_t *psize, uint64_t blockNo){
   /* Now we are ready to decode the message */
   bool status = pb_encode(&stream, SingleBytes_fields, &message);
   if (!status) {
-    Serial.printf("Encoding failed: %s\n", PB_GET_ERROR(&stream));
+    DEBUG_PRINTF("Encoding failed: %s\n", PB_GET_ERROR(&stream));
     return false;
   }
 
@@ -964,13 +930,7 @@ bool EncodeBlockNo(uint8_t *buffer, size_t *psize, uint64_t blockNo){
   copy_be32((uint32_t*)&buffer[1], &size32);  // insert the size in the stream as big endian 32-bit integer
   size32 += 5;
 
-  Serial.print("Message Length: ");
-  Serial.println(size32);
-  Serial.print("Message: ");
-  for(int i = 0; i<size32; i++){
-    Serial.printf("%02X",buffer[i]);
-  }
-  Serial.println("");
+  DEBUG_PRINT_BUFFER("Message", buffer, size32);
 
   *psize = size32;
   return true;
@@ -986,7 +946,7 @@ bool EncodeEmptyMessage(uint8_t *buffer, size_t *psize){
   /* Now we are ready to decode the message */
   bool status = pb_encode(&stream, Empty_fields, &message);
   if (!status) {
-    Serial.printf("Encoding failed: %s\n", PB_GET_ERROR(&stream));
+    DEBUG_PRINTF("Encoding failed: %s\n", PB_GET_ERROR(&stream));
     return false;
   }
 
@@ -995,13 +955,7 @@ bool EncodeEmptyMessage(uint8_t *buffer, size_t *psize){
   copy_be32((uint32_t*)&buffer[1], &size32);  // insert the size in the stream as big endian 32-bit integer
   size32 += 5;
 
-  Serial.print("Message Length: ");
-  Serial.println(size32);
-  Serial.print("Message: ");
-  for(int i = 0; i<size32; i++){
-    Serial.printf("%02X",buffer[i]);
-  }
-  Serial.println("");
+  DEBUG_PRINT_BUFFER("Message", buffer, size32);
 
   *psize = size32;
   return true;
@@ -1033,17 +987,19 @@ void send_grpc_request(struct sh2lib_handle *hd, char *service, uint8_t *buffer,
   sh2lib_do_putpost_with_nv(hd, nva, sizeof(nva) / sizeof(nva[0]), send_post_data, response_callback);
 
   while (!request_finished) {
-    Serial.println("sh2lib_execute");
+    DEBUG_PRINTLN("sh2lib_execute");
     if (sh2lib_execute(hd) != ESP_OK) {
-      Serial.println("Error in execute");
+      DEBUG_PRINTLN("Error in execute");
       break;
     }
     vTaskDelay(25);
   }
 
-  Serial.println("Request done. returning");
+  DEBUG_PRINTLN("Request done. returning");
 }
 
+///////////////////////////////////////////////////////////////////////////////////////////////////
+// EXPORTED FUNCTIONS
 ///////////////////////////////////////////////////////////////////////////////////////////////////
 
 void ContractCall(aergo *instance, char *contract_address, char *call_info, aergo_account *account){
