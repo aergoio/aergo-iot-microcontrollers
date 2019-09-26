@@ -318,12 +318,12 @@ bool encode_varuint64(pb_ostream_t *stream, const pb_field_t *field, void * cons
     return pb_encode_string(stream, ptr, len);
 }
 
-bool pb_encode_address(pb_ostream_t *stream, const pb_field_t *field, void * const *arg) {
+bool encode_account_address(pb_ostream_t *stream, const pb_field_t *field, void * const *arg) {
     char *str = *(char**)arg;
     char decoded[128];
     bool res;
 
-    DEBUG_PRINTF("pb_encode_address '%s'\n", str);
+    DEBUG_PRINTF("encode_account_address '%s'\n", str);
 
     if (strlen(str) != EncodedAddressLength) {
       DEBUG_PRINTF("Lenght of address is invalid: %d. It should be %d\n", strlen(str), EncodedAddressLength);
@@ -349,7 +349,7 @@ bool copy_ecdsa_address(mbedtls_ecdsa_context *account, uint8_t *buf, size_t buf
     return ret && (len == AddressLength);
 }
 
-bool pb_encode_ecdsa_address(pb_ostream_t *stream, const pb_field_t *field, void * const *arg) {
+bool encode_ecdsa_address(pb_ostream_t *stream, const pb_field_t *field, void * const *arg) {
     mbedtls_ecdsa_context *account = *(mbedtls_ecdsa_context**)arg;
     uint8_t buf[128];
     size_t len;
@@ -359,11 +359,11 @@ bool pb_encode_ecdsa_address(pb_ostream_t *stream, const pb_field_t *field, void
                 MBEDTLS_ECP_PF_COMPRESSED, &len, buf, sizeof buf);
 
     if( ret != 0 ){
-        DEBUG_PRINTF("pb_encode_ecdsa_address - invalid account\n");
+        DEBUG_PRINTF("encode_ecdsa_address - invalid account\n");
         return false;
     }
 
-    DEBUG_PRINTF("pb_encode_ecdsa_address - len=%d\n", len);
+    DEBUG_PRINTF("encode_ecdsa_address - len=%d\n", len);
 
     if (!pb_encode_tag_for_field(stream, field))
         return false;
@@ -390,6 +390,7 @@ bool encode_blob(pb_ostream_t *stream, const pb_field_t *field, void * const *ar
 
     if (!pb_encode_tag_for_field(stream, field))
         return false;
+
     if (blob->ptr==0) return true;
     return pb_encode_string(stream, blob->ptr, blob->size);
 }
@@ -817,6 +818,8 @@ bool encode_transaction(uint8_t *buffer, size_t *psize, struct txn *txn) {
   return true;
 }
 
+///////////////////////////////////////////////////////////////////////////////////////////////////
+
 bool EncodeContractCall(uint8_t *buffer, size_t *psize, char *contract_address, char *call_info, mbedtls_ecdsa_context *account) {
   struct txn txn;
   char out[64]={0};
@@ -853,7 +856,7 @@ bool EncodeQuery(uint8_t *buffer, size_t *psize, char *contract_address, char *q
   pb_ostream_t stream = pb_ostream_from_buffer(&buffer[5], *psize - 5);
 
   /* Set the callback functions */
-  message.contractAddress.funcs.encode = &pb_encode_address;
+  message.contractAddress.funcs.encode = &encode_account_address;
   message.contractAddress.arg = contract_address;
   message.queryinfo.funcs.encode = &encode_string;
   message.queryinfo.arg = query_info;
@@ -884,7 +887,7 @@ bool EncodeAccountAddress(uint8_t *buffer, size_t *psize, mbedtls_ecdsa_context 
   pb_ostream_t stream = pb_ostream_from_buffer(&buffer[5], *psize - 5);
 
   /* Set the callback functions */
-  message.value.funcs.encode = &pb_encode_ecdsa_address;
+  message.value.funcs.encode = &encode_ecdsa_address;
   message.value.arg = account;
 
   /* Now we are ready to decode the message */
