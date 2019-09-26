@@ -70,10 +70,16 @@ static int ecdsa_rand(void *rng_state, unsigned char *output, size_t len){
 #define EACH         64
 #define EEPROM_SIZE  (4 * EACH) + 2
 
-int get_private_key(mbedtls_ecdsa_context *keypair){
+int get_private_key(aergo_account *account){
   const mbedtls_ecp_curve_info *curve_info = mbedtls_ecp_curve_info_from_grp_id(MBEDTLS_ECP_DP_SECP256K1);
+  mbedtls_ecdsa_context *keypair;
   unsigned char buf[EEPROM_SIZE];
   int rc, base, i;
+
+  if( !account ) return -2;
+
+  keypair = &account->keypair;
+  mbedtls_ecdsa_init(keypair);
 
   /* read data from EPROM */
   if (!EEPROM.begin(EEPROM_SIZE)){
@@ -1041,12 +1047,12 @@ void send_grpc_request(struct sh2lib_handle *hd, char *service, uint8_t *buffer,
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////
 
-void ContractCall(aergo *instance, char *contract_address, char *call_info, mbedtls_ecdsa_context *account){
+void ContractCall(aergo *instance, char *contract_address, char *call_info, aergo_account *account){
   uint8_t buffer[1024];
   size_t size;
 
   size = sizeof(buffer);
-  if (EncodeContractCall(buffer, &size, contract_address, call_info, account)){
+  if (EncodeContractCall(buffer, &size, contract_address, call_info, &account->keypair)){
     send_grpc_request(&instance->hd, "CommitTX", buffer, size, handle_contract_call_response);
   }
 
@@ -1096,12 +1102,12 @@ void requestBlockchainStatus(aergo *instance){
 
 }
 
-void requestAccountState(aergo *instance, mbedtls_ecdsa_context *account){
+void requestAccountState(aergo *instance, aergo_account *account){
   uint8_t buffer[128];
   size_t size;
 
   size = sizeof(buffer);
-  if (EncodeAccountAddress(buffer, &size, account)){
+  if (EncodeAccountAddress(buffer, &size, &account->keypair)){
     send_grpc_request(&instance->hd, "GetState", buffer, size, handle_account_state_response);
   }
 

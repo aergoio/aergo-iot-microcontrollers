@@ -26,8 +26,8 @@ void http2_task(void *args)
   //requestBlock(&instance, 5447272);
 
 #if 0
-  mbedtls_ecdsa_context account;
-  mbedtls_ecdsa_init(&account);
+  aergo_account account;
+
   int rc = get_private_key(&account);
 
   requestAccountState(&instance, &account);
