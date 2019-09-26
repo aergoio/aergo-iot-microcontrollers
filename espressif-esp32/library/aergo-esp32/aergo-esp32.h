@@ -27,7 +27,7 @@ bool requestAccountState(aergo *instance, aergo_account *account);
 
 void ContractCall(aergo *instance, char *contract_address, char *call_info, aergo_account *account);
 
-void queryContract(aergo *instance, char *contract_address, char *query_info);
+bool queryContract(aergo *instance, char *contract_address, char *query_info, char *result, int size);
 
 void aergo_free_account(aergo_account *account);
 

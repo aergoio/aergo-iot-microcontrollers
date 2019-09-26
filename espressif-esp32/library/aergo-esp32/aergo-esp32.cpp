@@ -213,19 +213,22 @@ bool print_string(pb_istream_t *stream, const pb_field_t *field, void **arg){
 
 bool read_string(pb_istream_t *stream, const pb_field_t *field, void **arg){
     struct blob *str = *(struct blob**)arg;
+    size_t len = stream->bytes_left;
 
     DEBUG_PRINTF("read_string arg=%p\n", str);
     if (!str) return true;
     DEBUG_PRINTF("read_string bytes_left=%d str->size=%d\n", stream->bytes_left, str->size);
 
     /* We could read block-by-block to avoid the large buffer... */
-    if (stream->bytes_left > str->size){
+    if (stream->bytes_left > str->size || stream->bytes_left < 0){
         DEBUG_PRINTF("FAILED! read_string\n");
         return false;
     }
 
     if (!pb_read(stream, str->ptr, stream->bytes_left))
         return false;
+
+    str->ptr[len] = 0;  // null terminator
 
     DEBUG_PRINTF("read_string ok\n");
     return true;
@@ -399,6 +402,12 @@ bool encode_blob(pb_ostream_t *stream, const pb_field_t *field, void * const *ar
 
 uint8_t blockchain_id_hash[32] = {0};
 
+aergo_account *arg_aergo_account;
+
+struct blob arg_str;
+
+bool arg_success;
+
 int handle_blockchain_status_response(struct sh2lib_handle *handle, const char *data, size_t len, int flags) {
     if (len > 0) {
         int i, ret;
@@ -440,8 +449,6 @@ int handle_blockchain_status_response(struct sh2lib_handle *handle, const char *
     }
     return 0;
 }
-
-aergo_account *arg_aergo_account;
 
 int handle_account_state_response(struct sh2lib_handle *handle, const char *data, size_t len, int flags) {
     if (len > 0) {
@@ -588,8 +595,8 @@ int handle_query_response(struct sh2lib_handle *handle, const char *data, size_t
         pb_istream_t stream = pb_istream_from_buffer((const unsigned char *)&data[5], len-5);
 
         /* Set the callback functions */
-        response.value.funcs.decode = &print_string;
-        response.value.arg = (void*)"Result";
+        response.value.arg = &arg_str;
+        response.value.funcs.decode = &read_string;
 
         /* Now we are ready to decode the message */
         status = pb_decode(&stream, SingleBytes_fields, &response);
@@ -599,6 +606,8 @@ int handle_query_response(struct sh2lib_handle *handle, const char *data, size_t
             DEBUG_PRINTF("Decoding failed: %s\n", PB_GET_ERROR(&stream));
             return 1;
         }
+
+        arg_success = true;
 
         /* Print the data contained in the message */
         //DEBUG_PRINTF("xxxxx: %llu\n", block.header.confirms);
@@ -1033,15 +1042,20 @@ void ContractCall(aergo *instance, char *contract_address, char *call_info, aerg
 
 }
 
-void queryContract(aergo *instance, char *contract_address, char *query_info){
+bool queryContract(aergo *instance, char *contract_address, char *query_info, char *result, int len){
   uint8_t buffer[256];
   size_t size;
+
+  arg_str.ptr = (uint8_t*) result;
+  arg_str.size = len;
+  arg_success = false;
 
   size = sizeof(buffer);
   if (EncodeQuery(buffer, &size, contract_address, query_info)){
     send_grpc_request(&instance->hd, "QueryContract", buffer, size, handle_query_response);
   }
 
+  return arg_success;
 }
 
 void requestBlock(aergo *instance, uint64_t blockNo){
