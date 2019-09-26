@@ -534,7 +534,6 @@ int handle_post_response(struct sh2lib_handle *handle, const char *data, size_t 
     }
 
     if (flags == DATA_RECV_FRAME_COMPLETE) {
-        request_finished = true;
         Serial.println("COMPLETE FRAME RECEIVED");
     } else if (flags == DATA_RECV_RST_STREAM) {
         request_finished = true;
