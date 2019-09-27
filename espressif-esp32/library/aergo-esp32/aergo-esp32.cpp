@@ -726,18 +726,19 @@ bool sign_transaction(struct txn *txn, mbedtls_ecdsa_context *account){
 
   calculate_tx_hash(txn, hash, false);
 
-  mbedtls_printf("sign_transaction\n");
-  DEBUG_PRINT_BUFFER("  + Hash: ", hash, sizeof(hash));
+  DEBUG_PRINTLN("sign_transaction");
+  DEBUG_PRINT_BUFFER("  hash", hash, sizeof(hash));
 
   // Sign the message hash
   ret = mbedtls_ecdsa_write_signature(account, MBEDTLS_MD_SHA256,
                                       hash, sizeof(hash),
                                       txn->sign, &txn->sig_len,
                                       ecdsa_rand, NULL);
-
-  DEBUG_PRINTF("ret_write_sign = %d\n", ret);
-  mbedtls_printf( " ok (signature length = %u)\n", (unsigned int) txn->sig_len );
-  DEBUG_PRINT_BUFFER("  + Signature: ", txn->sign, txn->sig_len);
+  if (ret == 0) {
+    DEBUG_PRINT_BUFFER("  signature", txn->sign, txn->sig_len);
+  } else {
+    DEBUG_PRINTF("write_signature FAILED: %d\n", ret);
+  }
 
   return (ret == 0);
 }
