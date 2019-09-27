@@ -70,6 +70,8 @@ void http2_task(void *args){
 
   Serial.println("Connected");
 
+  // First retrieve the state in which the actuator should be
+
   ret = queryContract(
     &instance,
     "AmgMhLWDzwL2Goet6k4vxKniZksuEt3Dy8ULmiyDPpSmgJ5CgGZ4",
@@ -88,6 +90,8 @@ void http2_task(void *args){
   } else {
     Serial.println("FAILED when querying the smart contract");
   }
+
+  // Then subscribe for events on the smart contract
 
   ret = requestEventStream(
     &instance,
