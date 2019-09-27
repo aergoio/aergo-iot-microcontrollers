@@ -499,7 +499,7 @@ int handle_account_state_response(struct sh2lib_handle *handle, const char *data
     return 0;
 }
 
-int handle_post_response(struct sh2lib_handle *handle, const char *data, size_t len, int flags) {
+int handle_block_response(struct sh2lib_handle *handle, const char *data, size_t len, int flags) {
     if (len > 0) {
         int i, status;
         Block block = Block_init_zero;
@@ -1065,7 +1065,7 @@ void requestBlock(aergo *instance, uint64_t blockNo){
 
   size = sizeof(buffer);
   if (EncodeBlockNo(buffer, &size, blockNo)){
-    send_grpc_request(&instance->hd, "GetBlockMetadata", buffer, size, handle_post_response);
+    send_grpc_request(&instance->hd, "GetBlockMetadata", buffer, size, handle_block_response);
   }
 
 }
@@ -1076,7 +1076,7 @@ void requestBlockStream(aergo *instance){
 
   size = sizeof(buffer);
   if (EncodeEmptyMessage(buffer, &size)){
-    send_grpc_request(&instance->hd, "ListBlockStream", buffer, size, handle_post_response);
+    send_grpc_request(&instance->hd, "ListBlockStream", buffer, size, handle_block_response);
   }
 
 }
