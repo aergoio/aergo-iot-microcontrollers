@@ -1,10 +1,35 @@
+/*
+
+Note:
+
+When using a relay that turns ON when the input voltage is LOW, use the connections bellow:
+
+JD-VCC ----> 5V
+VCC    ----> Digital IO
+IN     ----> GND
+GND    ---—> GND
+
+*/
+
 #include <aergo-esp32.h>
 #include "WiFi.h"
 
 const char* ssid = "<<<include>>>";
 const char* password =  "<<<include>>>";
 
+#define ACTUATOR_PORT 23
+
 ///////////////////////////////////////////////////////////////////////////////////////////////////
+
+void act_on_command(char *command){
+
+  if (strcmp(command,"on")==0) {
+    digitalWrite(ACTUATOR_PORT, HIGH);   // turn the actuator on (HIGH is the voltage level)
+  }else{
+    digitalWrite(ACTUATOR_PORT, LOW);    // turn the actuator off by making the voltage LOW
+  }
+
+}
 
 void on_contract_event(contract_event *event){
 
@@ -20,10 +45,23 @@ void on_contract_event(contract_event *event){
   Serial.println("------------------------------------");
   Serial.println("");
 
+  act_on_command(event->eventName);
+
+}
+
+char * unquote(char *str){
+  if (str[0]=='"') {
+    char *p = strchr(str+1, '"');
+    if (p) *p = 0;
+    return &str[1];
+  }
+  return str;
 }
 
 void http2_task(void *args){
   aergo instance;
+  char response[128];
+  bool ret;
 
   if (aergo_connect(&instance, "http://testnet-api.aergo.io:7845") != ESP_OK) {
     Serial.println("Error connecting to HTTP2 server");
@@ -32,7 +70,26 @@ void http2_task(void *args){
 
   Serial.println("Connected");
 
-  bool ret = requestEventStream(
+  ret = queryContract(
+    &instance,
+    "AmgMhLWDzwL2Goet6k4vxKniZksuEt3Dy8ULmiyDPpSmgJ5CgGZ4",
+    "{\"Name\":\"get_last_state\"}",
+    response, sizeof response
+  );
+
+  if (ret == true) {
+    Serial.println("");
+    Serial.println("------------------------------------");
+    Serial.println("Smart Contract Query OK");
+    Serial.printf("Response: %s\n", response);
+    Serial.println("------------------------------------");
+    Serial.println("");
+    act_on_command(unquote(response));
+  } else {
+    Serial.println("FAILED when querying the smart contract");
+  }
+
+  ret = requestEventStream(
     &instance,
     "AmgMhLWDzwL2Goet6k4vxKniZksuEt3Dy8ULmiyDPpSmgJ5CgGZ4",
     "",
@@ -50,6 +107,10 @@ void http2_task(void *args){
 
 void setup() {
   Serial.begin(115200);
+
+  // initialize digital pin as an output
+  pinMode(ACTUATOR_PORT, OUTPUT);
+  digitalWrite(ACTUATOR_PORT, LOW);
 
   WiFi.begin(ssid, password);
 
