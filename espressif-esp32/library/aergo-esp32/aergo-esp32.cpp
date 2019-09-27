@@ -377,6 +377,8 @@ bool encode_string(pb_ostream_t *stream, const pb_field_t *field, void * const *
 
     DEBUG_PRINTF("encode_string '%s'\n", str);
 
+    if (!arg) return true;
+
     if (!pb_encode_tag_for_field(stream, field))
         return false;
 
@@ -387,6 +389,7 @@ bool encode_blob(pb_ostream_t *stream, const pb_field_t *field, void * const *ar
     struct blob *blob = *(struct blob**)arg;
 
     DEBUG_PRINTF("encode_blob arg=%p\n", blob);
+
     if (!blob) return true;
 
     if (!pb_encode_tag_for_field(stream, field))
