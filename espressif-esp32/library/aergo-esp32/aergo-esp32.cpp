@@ -698,26 +698,8 @@ int handle_event_response(struct sh2lib_handle *handle, const char *data, size_t
 }
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////
-// HTTP2 SEND CALLBACK
-///////////////////////////////////////////////////////////////////////////////////////////////////
 
-int send_post_data(struct sh2lib_handle *handle, char *buf, size_t length, uint32_t *data_flags) {
-    int copylen = send_size;
-    int i;
-
-    DEBUG_PRINTF("send_post_data length=%d\n", length);
-
-    if (copylen <= length) {
-        memcpy(buf, to_send, copylen);
-    } else {
-        copylen = 0;
-    }
-
-    DEBUG_PRINT_BUFFER("sending", buf, copylen);
-
-    (*data_flags) |= NGHTTP2_DATA_FLAG_EOF;
-    return copylen;
-}
+uint32_t encode_http2_data_frame(uint8_t *buffer, uint32_t content_size);
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////
 // AERGO SPECIFIC
@@ -872,7 +854,7 @@ bool encode_1_transaction(pb_ostream_t *stream, const pb_field_t *field, void * 
 
 bool encode_transaction(uint8_t *buffer, size_t *psize, struct txn *txn) {
   TxList message = TxList_init_zero;
-  uint32_t size32;
+  uint32_t size;
 
   /* Create a stream that writes to the buffer */
   pb_ostream_t stream = pb_ostream_from_buffer(&buffer[5], *psize - 5);
@@ -888,18 +870,13 @@ bool encode_transaction(uint8_t *buffer, size_t *psize, struct txn *txn) {
     return false;
   }
 
-  buffer[0] = 0;  // no compression
-  size32 = stream.bytes_written;
-  copy_be32((uint32_t*)&buffer[1], &size32);  // insert the size in the stream as big endian 32-bit integer
-  size32 += 5;
+  size = encode_http2_data_frame(buffer, stream.bytes_written);
 
-  DEBUG_PRINT_BUFFER("Message", buffer, size32);
+  DEBUG_PRINT_BUFFER("Message", buffer, size);
 
-  *psize = size32;
+  *psize = size;
   return true;
 }
-
-///////////////////////////////////////////////////////////////////////////////////////////////////
 
 bool EncodeContractCall(uint8_t *buffer, size_t *psize, char *contract_address, char *call_info, aergo_account *account) {
   struct txn txn;
@@ -931,7 +908,7 @@ bool EncodeContractCall(uint8_t *buffer, size_t *psize, char *contract_address, 
 
 bool EncodeQuery(uint8_t *buffer, size_t *psize, char *contract_address, char *query_info){
   Query message = Query_init_zero;
-  uint32_t size32;
+  uint32_t size;
 
   /* Create a stream that writes to the buffer */
   pb_ostream_t stream = pb_ostream_from_buffer(&buffer[5], *psize - 5);
@@ -949,20 +926,17 @@ bool EncodeQuery(uint8_t *buffer, size_t *psize, char *contract_address, char *q
     return false;
   }
 
-  buffer[0] = 0;  // no compression
-  size32 = stream.bytes_written;
-  copy_be32((uint32_t*)&buffer[1], &size32);  // insert the size in the stream as big endian 32-bit integer
-  size32 += 5;
+  size = encode_http2_data_frame(buffer, stream.bytes_written);
 
-  DEBUG_PRINT_BUFFER("Message", buffer, size32);
+  DEBUG_PRINT_BUFFER("Message", buffer, size);
 
-  *psize = size32;
+  *psize = size;
   return true;
 }
 
 bool EncodeFilterInfo(uint8_t *buffer, size_t *psize, char *contract_address, char *event_name){
   FilterInfo message = FilterInfo_init_zero;
-  uint32_t size32;
+  uint32_t size;
 
   /* Create a stream that writes to the buffer */
   pb_ostream_t stream = pb_ostream_from_buffer(&buffer[5], *psize - 5);
@@ -994,20 +968,17 @@ bool EncodeFilterInfo(uint8_t *buffer, size_t *psize, char *contract_address, ch
     return false;
   }
 
-  buffer[0] = 0;  // no compression
-  size32 = stream.bytes_written;
-  copy_be32((uint32_t*)&buffer[1], &size32);  // insert the size in the stream as big endian 32-bit integer
-  size32 += 5;
+  size = encode_http2_data_frame(buffer, stream.bytes_written);
 
-  DEBUG_PRINT_BUFFER("Message", buffer, size32);
+  DEBUG_PRINT_BUFFER("Message", buffer, size);
 
-  *psize = size32;
+  *psize = size;
   return true;
 }
 
 bool EncodeAccountAddress(uint8_t *buffer, size_t *psize, mbedtls_ecdsa_context *account) {
   SingleBytes message = SingleBytes_init_zero;
-  uint32_t size32;
+  uint32_t size;
 
   /* Create a stream that writes to the buffer */
   pb_ostream_t stream = pb_ostream_from_buffer(&buffer[5], *psize - 5);
@@ -1023,14 +994,11 @@ bool EncodeAccountAddress(uint8_t *buffer, size_t *psize, mbedtls_ecdsa_context 
     return false;
   }
 
-  buffer[0] = 0;  // no compression
-  size32 = stream.bytes_written;
-  copy_be32((uint32_t*)&buffer[1], &size32);  // insert the size in the stream as big endian 32-bit integer
-  size32 += 5;
+  size = encode_http2_data_frame(buffer, stream.bytes_written);
 
-  DEBUG_PRINT_BUFFER("Message", buffer, size32);
+  DEBUG_PRINT_BUFFER("Message", buffer, size);
 
-  *psize = size32;
+  *psize = size;
   return true;
 }
 
@@ -1038,7 +1006,7 @@ bool EncodeBlockNo(uint8_t *buffer, size_t *psize, uint64_t blockNo){
   SingleBytes message = SingleBytes_init_zero;
   //  BlockMetadata blockmeta = BlockMetadata_init_zero;
   //  Block block = Block_init_zero;
-  uint32_t size32;
+  uint32_t size;
 
   /* Create a stream that writes to the buffer */
   pb_ostream_t stream = pb_ostream_from_buffer(&buffer[5], *psize - 5);
@@ -1054,20 +1022,17 @@ bool EncodeBlockNo(uint8_t *buffer, size_t *psize, uint64_t blockNo){
     return false;
   }
 
-  buffer[0] = 0;  // no compression
-  size32 = stream.bytes_written;
-  copy_be32((uint32_t*)&buffer[1], &size32);  // insert the size in the stream as big endian 32-bit integer
-  size32 += 5;
+  size = encode_http2_data_frame(buffer, stream.bytes_written);
 
-  DEBUG_PRINT_BUFFER("Message", buffer, size32);
+  DEBUG_PRINT_BUFFER("Message", buffer, size);
 
-  *psize = size32;
+  *psize = size;
   return true;
 }
 
 bool EncodeEmptyMessage(uint8_t *buffer, size_t *psize){
   Empty message = Empty_init_zero;
-  uint32_t size32;
+  uint32_t size;
 
   /* Create a stream that writes to the buffer */
   pb_ostream_t stream = pb_ostream_from_buffer(&buffer[5], *psize - 5);
@@ -1079,18 +1044,44 @@ bool EncodeEmptyMessage(uint8_t *buffer, size_t *psize){
     return false;
   }
 
-  buffer[0] = 0;  // no compression
-  size32 = stream.bytes_written;
-  copy_be32((uint32_t*)&buffer[1], &size32);  // insert the size in the stream as big endian 32-bit integer
-  size32 += 5;
+  size = encode_http2_data_frame(buffer, stream.bytes_written);
 
-  DEBUG_PRINT_BUFFER("Message", buffer, size32);
+  DEBUG_PRINT_BUFFER("Message", buffer, size);
 
-  *psize = size32;
+  *psize = size;
   return true;
 }
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////
+// HTTP2 AND GRPC
+///////////////////////////////////////////////////////////////////////////////////////////////////
+
+uint32_t encode_http2_data_frame(uint8_t *buffer, uint32_t content_size){
+  // no compression
+  buffer[0] = 0;
+  // insert the size in the stream as big endian 32-bit integer
+  copy_be32((uint32_t*)&buffer[1], &content_size);
+  // return the frame size
+  return content_size + 5;
+}
+
+int send_post_data(struct sh2lib_handle *handle, char *buf, size_t length, uint32_t *data_flags){
+  int copylen = send_size;
+  int i;
+
+  DEBUG_PRINTF("send_post_data length=%d\n", length);
+
+  if (copylen <= length) {
+    memcpy(buf, to_send, copylen);
+  } else {
+    copylen = 0;
+  }
+
+  DEBUG_PRINT_BUFFER("sending", buf, copylen);
+
+  (*data_flags) |= NGHTTP2_DATA_FLAG_EOF;
+  return copylen;
+}
 
 void send_grpc_request(struct sh2lib_handle *hd, char *service, uint8_t *buffer, size_t size, sh2lib_frame_data_recv_cb_t response_callback) {
   char path[64];
@@ -1126,6 +1117,8 @@ void send_grpc_request(struct sh2lib_handle *hd, char *service, uint8_t *buffer,
 
   DEBUG_PRINTLN("Request done. returning");
 }
+
+///////////////////////////////////////////////////////////////////////////////////////////////////
 
 bool check_blockchain_id_hash(aergo *instance) {
 
