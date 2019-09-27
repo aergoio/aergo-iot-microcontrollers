@@ -6,8 +6,23 @@ const char* password =  "<<<include>>>";
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////
 
-void http2_task(void *args)
-{
+void on_contract_event(contract_event *event){
+
+  Serial.println("");
+  Serial.println("------------------------------------");
+  Serial.println("     Smart Contract Event");
+  Serial.printf("contractAddress: %s\n", event->contractAddress);
+  Serial.printf("eventName: %s\n", event->eventName);
+  Serial.printf("jsonArgs: %s\n", event->jsonArgs);
+  Serial.printf("eventIdx: %d\n", event->eventIdx);
+  Serial.printf("blockNo: %llu\n", event->blockNo);
+  Serial.printf("txIndex: %d\n", event->txIndex);
+  Serial.println("------------------------------------");
+  Serial.println("");
+
+}
+
+void http2_task(void *args){
   aergo instance;
   aergo_account account;
 
@@ -18,30 +33,15 @@ void http2_task(void *args)
 
   Serial.println("Connected");
 
-  //requestBlockStream(&instance);
+  bool ret = requestEventStream(
+    &instance,
+    "AmgMhLWDzwL2Goet6k4vxKniZksuEt3Dy8ULmiyDPpSmgJ5CgGZ4",
+    "",
+    on_contract_event);
 
-
-
-  int rc = get_private_key(&account);
-
-  requestAccountState(&instance, &account);
-  Serial.println("");
-  Serial.println("------------------------------------");
-  Serial.printf("Account address: %s\n", account.address);
-  Serial.printf("Account nonce: %d\n", account.nonce);
-
-
-
-        char json[128];
-        sprintf(json, "{\"Name\":\"set_name\", \"Args\":[\"%s\"]}", buf);
-
-        ContractCall(&instance, "AmgLnRaGFLyvCPCEMHYJHooufT1c1pENTRGeV78WNPTxwQ2RYUW7", json, &account);
-
-        delay(2000);
-
-        queryContract(&instance, "AmgLnRaGFLyvCPCEMHYJHooufT1c1pENTRGeV78WNPTxwQ2RYUW7", "{\"Name\":\"hello\"}");
-
-
+  if (!ret) {
+    Serial.println("request FAILED");
+  }
 
   aergo_free_account(&account);
   aergo_free(&instance);

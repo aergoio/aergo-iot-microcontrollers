@@ -626,6 +626,77 @@ int handle_query_response(struct sh2lib_handle *handle, const char *data, size_t
     return 0;
 }
 
+contract_event_cb arg_contract_event_cb = NULL;
+
+int handle_event_response(struct sh2lib_handle *handle, const char *data, size_t len, int flags) {
+    if (len > 0) {
+        Event response = Event_init_zero;
+        contract_event event = {0};
+        char raw_address[64];
+        int status;
+
+        DEBUG_PRINT_BUFFER("returned", data, len);
+
+        if (arg_contract_event_cb==NULL) {
+          DEBUG_PRINTLN("STREAM CLOSED");
+          request_finished = true;
+          return 0;
+        }
+
+        /* Create a stream that reads from the buffer */
+        pb_istream_t stream = pb_istream_from_buffer((const unsigned char *)&data[5], len-5);
+
+        /* Set the callback functions */
+        struct blob s1 { .ptr = (uint8_t*) raw_address, .size = sizeof raw_address };
+        response.contractAddress.arg = &s1;
+        response.contractAddress.funcs.decode = &read_blob;
+        struct blob s2 { .ptr = (uint8_t*) event.eventName, .size = sizeof event.eventName };
+        response.eventName.arg = &s2;
+        response.eventName.funcs.decode = &read_string;
+        struct blob s3 { .ptr = (uint8_t*) event.jsonArgs, .size = sizeof event.jsonArgs };
+        response.jsonArgs.arg = &s3;
+        response.jsonArgs.funcs.decode = &read_string;
+
+        struct blob b1 { .ptr = (uint8_t*) event.txHash, .size = sizeof event.txHash };
+        response.txHash.arg = &b1;
+        response.txHash.funcs.decode = &read_blob;
+        struct blob b2 { .ptr = (uint8_t*) event.blockHash, .size = sizeof event.blockHash };
+        response.blockHash.arg = &b2;
+        response.blockHash.funcs.decode = &read_blob;
+
+        /* Now we are ready to decode the message */
+        status = pb_decode(&stream, Event_fields, &response);
+        if (!status) {
+            DEBUG_PRINTF("Decoding failed: %s\n", PB_GET_ERROR(&stream));
+            return 1;
+        }
+
+        /* encode the contract address from binary to string format */
+        encode_address(raw_address, AddressLength, event.contractAddress, sizeof event.contractAddress);
+
+        /* copy values */
+        event.eventIdx = response.eventIdx;
+        event.blockNo = response.blockNo;
+        event.txIndex = response.txIndex;
+
+        /* Call the callback function */
+        arg_contract_event_cb(&event);
+
+        arg_success = true;
+
+    } else {
+        DEBUG_PRINTLN("returned 0 bytes");
+    }
+
+    if (flags == DATA_RECV_FRAME_COMPLETE) {
+        DEBUG_PRINTLN("COMPLETE FRAME RECEIVED");
+    } else if (flags == DATA_RECV_RST_STREAM) {
+        request_finished = true;
+        DEBUG_PRINTLN("STREAM CLOSED");
+    }
+    return 0;
+}
+
 ///////////////////////////////////////////////////////////////////////////////////////////////////
 // HTTP2 SEND CALLBACK
 ///////////////////////////////////////////////////////////////////////////////////////////////////
@@ -889,6 +960,51 @@ bool EncodeQuery(uint8_t *buffer, size_t *psize, char *contract_address, char *q
   return true;
 }
 
+bool EncodeFilterInfo(uint8_t *buffer, size_t *psize, char *contract_address, char *event_name){
+  FilterInfo message = FilterInfo_init_zero;
+  uint32_t size32;
+
+  /* Create a stream that writes to the buffer */
+  pb_ostream_t stream = pb_ostream_from_buffer(&buffer[5], *psize - 5);
+
+  /* Set encoding callback functions for variable length data */
+  message.contractAddress.funcs.encode = &encode_account_address;
+  message.contractAddress.arg = contract_address;
+  if (event_name) {
+    message.eventName.funcs.encode = &encode_string;
+    message.eventName.arg = event_name;
+  }
+#if 0
+  message.argFilter.funcs.encode = &encode_string;
+  message.argFilter.arg = arg_filter;
+#endif
+
+  /* Set values directly */
+  message.desc = true;
+#if 0
+  message.blockfrom = x;
+  message.blockto = y;
+  message.recentBlockCnt = z;
+#endif
+
+  /* Encode the message on the buffer */
+  bool status = pb_encode(&stream, FilterInfo_fields, &message);
+  if (!status) {
+    DEBUG_PRINTF("Encoding failed: %s\n", PB_GET_ERROR(&stream));
+    return false;
+  }
+
+  buffer[0] = 0;  // no compression
+  size32 = stream.bytes_written;
+  copy_be32((uint32_t*)&buffer[1], &size32);  // insert the size in the stream as big endian 32-bit integer
+  size32 += 5;
+
+  DEBUG_PRINT_BUFFER("Message", buffer, size32);
+
+  *psize = size32;
+  return true;
+}
+
 bool EncodeAccountAddress(uint8_t *buffer, size_t *psize, mbedtls_ecdsa_context *account) {
   SingleBytes message = SingleBytes_init_zero;
   uint32_t size32;
@@ -1054,6 +1170,21 @@ bool queryContract(aergo *instance, char *contract_address, char *query_info, ch
   size = sizeof(buffer);
   if (EncodeQuery(buffer, &size, contract_address, query_info)){
     send_grpc_request(&instance->hd, "QueryContract", buffer, size, handle_query_response);
+  }
+
+  return arg_success;
+}
+
+bool requestEventStream(aergo *instance, char *contract_address, char *event_name, contract_event_cb cb){
+  uint8_t buffer[256];
+  size_t size;
+
+  arg_contract_event_cb = cb;
+  arg_success = false;
+
+  size = sizeof(buffer);
+  if (EncodeFilterInfo(buffer, &size, contract_address, event_name)){
+    send_grpc_request(&instance->hd, "ListEventStream", buffer, size, handle_event_response);
   }
 
   return arg_success;
