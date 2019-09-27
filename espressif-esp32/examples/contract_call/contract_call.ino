@@ -47,14 +47,10 @@ void http2_task(void *args)
         if( strcmp(buf,"q")==0 || strcmp(buf,"Q")==0 ) break;
         Serial.printf("you typed: %s\n", buf);
 
-        char json[128];
+        char json[256];
         sprintf(json, "{\"Name\":\"set_name\", \"Args\":[\"%s\"]}", buf);
 
         ContractCall(&instance, "AmgLnRaGFLyvCPCEMHYJHooufT1c1pENTRGeV78WNPTxwQ2RYUW7", json, &account);
-
-        delay(2000);
-
-        queryContract(&instance, "AmgLnRaGFLyvCPCEMHYJHooufT1c1pENTRGeV78WNPTxwQ2RYUW7", "{\"Name\":\"hello\"}");
 
       }
       Serial.println("done.\n");
