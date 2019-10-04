@@ -24,4 +24,8 @@ upload it to an ESP32 device.
 ESP32 supports [Secure Boot](https://docs.espressif.com/projects/esp-idf/en/latest/security/secure-boot.html)
 and [Flash Encryption](https://docs.espressif.com/projects/esp-idf/en/latest/security/flash-encryption.html)
 
-You can also read a compact overview on this article: [Understanding ESP32’s Security Features](https://medium.com/the-esp-journal/understanding-esp32s-security-features-14483e465724)
+When enabled, only software signed by your company will be accepted and run by the device.
+
+The compiled code and the private key are stored encrypted and no one is able to read the encryption key, not even yourself.
+
+For a compact overview of these features, check this article: [Understanding ESP32’s Security Features](https://medium.com/the-esp-journal/understanding-esp32s-security-features-14483e465724)
