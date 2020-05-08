@@ -22,6 +22,8 @@ struct aergo_account {
   mbedtls_ecdsa_context keypair;
   char address[64];
   uint64_t nonce;
+  double balance;
+  uint8_t state_root[32];
   bool init;
 };
 

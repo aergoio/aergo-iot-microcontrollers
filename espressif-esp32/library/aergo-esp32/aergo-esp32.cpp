@@ -19,6 +19,7 @@ extern "C" {
 ///////////////////////////////////////////////////////////////////////////////////////////////////
 
 #if defined(DEBUG_MESSAGES)
+#pragma GCC diagnostic warning "-fpermissive"
 #define DEBUG_PRINT      Serial.print
 #define DEBUG_PRINTF     Serial.printf
 #define DEBUG_PRINTLN    Serial.println
@@ -274,6 +275,34 @@ bool print_blob(pb_istream_t *stream, const pb_field_t *field, void **arg)
     return true;
 }
 
+bool read_varuint64(pb_istream_t *stream, const pb_field_t *field, void **arg){
+    uint64_t *pvalue = *(uint64_t**)arg;
+    uint64_t value = 0;
+    uint8_t *ptr;
+
+    DEBUG_PRINTF("read_varuint64 arg=%p\n", pvalue);
+    if (!pvalue) return true;
+    DEBUG_PRINTF("read_varuint64 bytes_left=%d\n", stream->bytes_left);
+
+    if (stream->bytes_left > sizeof(uint64_t)){
+        DEBUG_PRINTF("FAILED! read_varuint64\n");
+        return false;
+    }
+
+    // pointer to where the bytes should be copied
+    ptr = (uint8_t*)&value + sizeof(uint64_t) - stream->bytes_left;
+
+    // read the bytes
+    if (!pb_read(stream, ptr, stream->bytes_left))
+        return false;
+
+    // convert the value from big endian
+    copy_be64(pvalue, &value);
+
+    DEBUG_PRINTF("read_varuint64 ok - value = %lld\n", *pvalue);
+    return true;
+}
+
 ///////////////////////////////////////////////////////////////////////////////////////////////////
 // ENCODING
 ///////////////////////////////////////////////////////////////////////////////////////////////////
@@ -306,10 +335,10 @@ bool encode_varuint64(pb_ostream_t *stream, const pb_field_t *field, void * cons
     if (!pb_encode_tag_for_field(stream, field))
         return false;
 
-    // convert to big endian
+    // convert the value to big endian
     copy_be64(&value2, &value);
 
-    // skip zero bytes, unless the last one
+    // skip the null bytes, unless the last one
     ptr = (uint8_t*)&value2;
     len = 8;
     while( *ptr==0 && len>1 ){ ptr++; len--; }
@@ -465,12 +494,12 @@ int handle_account_state_response(struct sh2lib_handle *handle, const char *data
 
         /* Set the callback functions */
 
-        //state.balance.arg = &balance;
-        //state.balance.funcs.decode = &read_varuint64;
+        account_state.balance.arg = &arg_aergo_account->balance;
+        account_state.balance.funcs.decode = &read_varuint64;
 
-        //struct blob bb { .ptr = storageRoot, .size = 32 };
-        //state.storageRoot.arg = &bb;
-        //state.storageRoot.funcs.decode = &read_varuint64;
+        struct blob bb { .ptr = arg_aergo_account->state_root, .size = 32 };
+        account_state.storageRoot.arg = &bb;
+        account_state.storageRoot.funcs.decode = &read_blob;
 
         /* Now we are ready to decode the message */
         ret = pb_decode(&stream, State_fields, &account_state);
