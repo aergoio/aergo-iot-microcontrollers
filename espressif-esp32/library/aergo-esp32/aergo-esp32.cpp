@@ -1096,15 +1096,16 @@ void send_grpc_request(struct sh2lib_handle *hd, char *service, uint8_t *buffer,
   sprintf(path, "/types.AergoRPCService/%s", service);
   sprintf(len, "%d", size);
 
-  const nghttp2_nv nva[] = { SH2LIB_MAKE_NV(":method", "POST"),
-                             SH2LIB_MAKE_NV(":scheme", "https"),
-                             SH2LIB_MAKE_NV(":authority", hd->hostname),
-                             SH2LIB_MAKE_NV(":path", path),
-                             //SH2LIB_MAKE_NV("te", "trailers"),
-                             SH2LIB_MAKE_NV("Content-Type", "application/grpc"),
-                             //SH2LIB_MAKE_NV("grpc-encoding", "identity")
-                             SH2LIB_MAKE_NV("content-length", len)
-                           };
+  const nghttp2_nv nva[] = {
+    SH2LIB_MAKE_NV(":method", "POST"),
+    SH2LIB_MAKE_NV(":scheme", "https"),
+    SH2LIB_MAKE_NV(":authority", hd->hostname),
+    SH2LIB_MAKE_NV(":path", path),
+    //SH2LIB_MAKE_NV("te", "trailers"),
+    SH2LIB_MAKE_NV("Content-Type", "application/grpc"),
+    //SH2LIB_MAKE_NV("grpc-encoding", "identity")
+    SH2LIB_MAKE_NV("content-length", len)
+  };
 
   request_finished = false;
   sh2lib_do_putpost_with_nv(hd, nva, sizeof(nva) / sizeof(nva[0]), send_post_data, response_callback);
@@ -1126,7 +1127,7 @@ void send_grpc_request(struct sh2lib_handle *hd, char *service, uint8_t *buffer,
 bool check_blockchain_id_hash(aergo *instance) {
 
   if (blockchain_id_hash[0] == 0) {
-    requestBlockchainStatus(instance);
+    aergo_get_blockchain_status(instance);
   }
 
   return (blockchain_id_hash[0] != 0);
@@ -1136,7 +1137,7 @@ bool check_blockchain_id_hash(aergo *instance) {
 // EXPORTED FUNCTIONS
 ///////////////////////////////////////////////////////////////////////////////////////////////////
 
-void ContractCall(aergo *instance, char *contract_address, char *call_info, aergo_account *account){
+void aergo_call_smart_contract(aergo *instance, char *contract_address, char *call_info, aergo_account *account){
   uint8_t buffer[1024];
   size_t size;
 
@@ -1155,7 +1156,7 @@ void ContractCall(aergo *instance, char *contract_address, char *call_info, aerg
 
 }
 
-bool queryContract(aergo *instance, char *contract_address, char *query_info, char *result, int len){
+bool aergo_query_smart_contract(aergo *instance, char *contract_address, char *query_info, char *result, int len){
   uint8_t buffer[256];
   size_t size;
 
@@ -1171,7 +1172,7 @@ bool queryContract(aergo *instance, char *contract_address, char *query_info, ch
   return arg_success;
 }
 
-bool requestEventStream(aergo *instance, char *contract_address, char *event_name, contract_event_cb cb){
+bool aergo_contract_events_subscribe(aergo *instance, char *contract_address, char *event_name, contract_event_cb cb){
   uint8_t buffer[256];
   size_t size;
 
@@ -1186,7 +1187,7 @@ bool requestEventStream(aergo *instance, char *contract_address, char *event_nam
   return arg_success;
 }
 
-void requestBlock(aergo *instance, uint64_t blockNo){
+void aergo_get_block(aergo *instance, uint64_t blockNo){
   uint8_t buffer[128];
   size_t size;
 
@@ -1197,7 +1198,7 @@ void requestBlock(aergo *instance, uint64_t blockNo){
 
 }
 
-void requestBlockStream(aergo *instance){
+void aergo_block_stream_subscribe(aergo *instance){
   uint8_t buffer[128];
   size_t size;
 
@@ -1208,7 +1209,7 @@ void requestBlockStream(aergo *instance){
 
 }
 
-void requestBlockchainStatus(aergo *instance){
+void aergo_get_blockchain_status(aergo *instance){
   uint8_t buffer[128];
   size_t size;
 

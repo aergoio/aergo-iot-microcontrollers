@@ -32,7 +32,7 @@ void http2_task(void *args){
 
   Serial.println("Connected");
 
-  bool ret = requestEventStream(
+  bool ret = aergo_contract_events_subscribe(
     &instance,
     "AmgMhLWDzwL2Goet6k4vxKniZksuEt3Dy8ULmiyDPpSmgJ5CgGZ4",
     "",

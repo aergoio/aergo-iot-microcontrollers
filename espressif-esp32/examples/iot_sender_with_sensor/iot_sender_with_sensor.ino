@@ -4,11 +4,27 @@
 const char* ssid = "<<<include>>>";
 const char* password =  "<<<include>>>";
 
-#define SENSOR_PORT 34
+#define SENSOR_PORT 33
 
-#define VALUE_DIFF_THRESHOLD 5
+#define VALUE_DIFF_THRESHOLD 25
+
+#define NUM_READINGS 5
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////
+
+int readSensor(int port){
+  int sum = 0;
+  int count = 0;
+
+  while (1) {
+    sum += analogRead(port);
+    count++;
+    if (count==NUM_READINGS) break;
+    delay(100);
+  }
+
+  return sum / NUM_READINGS;
+}
 
 void http2_task(void *args){
   aergo instance;
@@ -36,7 +52,8 @@ void http2_task(void *args){
 
   while(1){
     // Read value from the sensor
-    int value = analogRead(SENSOR_PORT);
+    int value = readSensor(SENSOR_PORT);
+    Serial.println(value);
 
     // Check if the new value differs enough from the previous sent value
     if (abs(value - prev_value) >= VALUE_DIFF_THRESHOLD) {
@@ -47,12 +64,17 @@ void http2_task(void *args){
       Serial.printf("Sending value: %d\n", value);
 
       sprintf(json, "{\"Name\":\"update_value\", \"Args\":[%d]}", value);
-      ContractCall(&instance, "AmgMhLWDzwL2Goet6k4vxKniZksuEt3Dy8ULmiyDPpSmgJ5CgGZ4", json, &account);
+      aergo_call_smart_contract(&instance,
+        "AmhCzNds4F9i5Duoyai6FfzSiF5Re5PEhcH8kQWkKNbBP5Z4djcX",
+        json,
+        &account);
+
+      Serial.println("------------------------------------");
       prev_value = value;
     }
 
     // Wait until next reading
-    delay(1000);
+    delay(500);
   }
 
 

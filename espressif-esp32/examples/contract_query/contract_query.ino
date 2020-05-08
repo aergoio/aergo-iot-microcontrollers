@@ -18,7 +18,7 @@ void http2_task(void *args)
 
   Serial.println("Connected");
 
-  bool ret = queryContract(
+  bool ret = aergo_query_smart_contract(
     &instance,
     "AmgLnRaGFLyvCPCEMHYJHooufT1c1pENTRGeV78WNPTxwQ2RYUW7",
     "{\"Name\":\"hello\"}",

@@ -72,9 +72,9 @@ void http2_task(void *args){
 
   // First retrieve the state in which the actuator should be
 
-  ret = queryContract(
+  ret = aergo_query_smart_contract(
     &instance,
-    "AmgMhLWDzwL2Goet6k4vxKniZksuEt3Dy8ULmiyDPpSmgJ5CgGZ4",
+    "AmhCzNds4F9i5Duoyai6FfzSiF5Re5PEhcH8kQWkKNbBP5Z4djcX",
     "{\"Name\":\"get_last_state\"}",
     response, sizeof response
   );
@@ -93,9 +93,9 @@ void http2_task(void *args){
 
   // Then subscribe for events on the smart contract
 
-  ret = requestEventStream(
+  ret = aergo_contract_events_subscribe(
     &instance,
-    "AmgMhLWDzwL2Goet6k4vxKniZksuEt3Dy8ULmiyDPpSmgJ5CgGZ4",
+    "AmhCzNds4F9i5Duoyai6FfzSiF5Re5PEhcH8kQWkKNbBP5Z4djcX",
     "",
     on_contract_event);
 

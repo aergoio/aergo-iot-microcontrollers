@@ -50,7 +50,7 @@ void http2_task(void *args)
         char json[256];
         sprintf(json, "{\"Name\":\"set_name\", \"Args\":[\"%s\"]}", buf);
 
-        ContractCall(&instance, "AmgLnRaGFLyvCPCEMHYJHooufT1c1pENTRGeV78WNPTxwQ2RYUW7", json, &account);
+        aergo_call_smart_contract(&instance, "AmgLnRaGFLyvCPCEMHYJHooufT1c1pENTRGeV78WNPTxwQ2RYUW7", json, &account);
 
       }
       Serial.println("done.\n");

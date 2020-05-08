@@ -17,11 +17,11 @@ void http2_task(void *args)
 
   Serial.println("Connected");
 
-  requestBlockchainStatus(&instance);
+  aergo_get_blockchain_status(&instance);
 
-  requestBlockStream(&instance);
+  aergo_block_stream_subscribe(&instance);
 
-  //requestBlock(&instance, 5447272);
+  //aergo_get_block(&instance, 5447272);
 
   aergo_free(&instance);
   Serial.println("Disconnected");
