@@ -13,6 +13,7 @@
 
 extern "C" {
 #include "endianess.h"
+#include "conversions.h"
 #include "account.h"
 }
 
@@ -275,31 +276,33 @@ bool print_blob(pb_istream_t *stream, const pb_field_t *field, void **arg)
     return true;
 }
 
-bool read_varuint64(pb_istream_t *stream, const pb_field_t *field, void **arg){
-    uint64_t *pvalue = *(uint64_t**)arg;
-    uint64_t value = 0;
-    uint8_t *ptr;
+bool read_bignum_to_double(pb_istream_t *stream, const pb_field_t *field, void **arg){
+    double *pvalue = *(double**)arg;
+    uint8_t buf[64];
+    size_t len = stream->bytes_left;
 
-    DEBUG_PRINTF("read_varuint64 arg=%p\n", pvalue);
+    DEBUG_PRINTF("read_bignum_to_double arg=%p\n", pvalue);
     if (!pvalue) return true;
-    DEBUG_PRINTF("read_varuint64 bytes_left=%d\n", stream->bytes_left);
+    DEBUG_PRINTF("read_bignum_to_double bytes_left=%d\n", stream->bytes_left);
 
-    if (stream->bytes_left > sizeof(uint64_t)){
-        DEBUG_PRINTF("FAILED! read_varuint64\n");
+    if (stream->bytes_left > sizeof(buf)){
+        DEBUG_PRINTF("FAILED! read_bignum_to_double\n");
         return false;
     }
 
-    // pointer to where the bytes should be copied
-    ptr = (uint8_t*)&value + sizeof(uint64_t) - stream->bytes_left;
-
     // read the bytes
-    if (!pb_read(stream, ptr, stream->bytes_left))
+    if (!pb_read(stream, buf, stream->bytes_left))
         return false;
 
-    // convert the value from big endian
-    copy_be64(pvalue, &value);
+    // convert the value from big endian integer to string
+    if (bignum_to_string(buf, len, buf, sizeof(buf)) <= 0) return false;
 
-    DEBUG_PRINTF("read_varuint64 ok - value = %lld\n", *pvalue);
+    DEBUG_PRINTF("read_bignum_to_double - string value = %s\n", buf);
+
+    // convert the value from string to double
+    *pvalue = atof(buf);
+
+    DEBUG_PRINTF("read_bignum_to_double ok - value = %f\n", *pvalue);
     return true;
 }
 
@@ -495,7 +498,7 @@ int handle_account_state_response(struct sh2lib_handle *handle, const char *data
         /* Set the callback functions */
 
         account_state.balance.arg = &arg_aergo_account->balance;
-        account_state.balance.funcs.decode = &read_varuint64;
+        account_state.balance.funcs.decode = &read_bignum_to_double;
 
         struct blob bb { .ptr = arg_aergo_account->state_root, .size = 32 };
         account_state.storageRoot.arg = &bb;

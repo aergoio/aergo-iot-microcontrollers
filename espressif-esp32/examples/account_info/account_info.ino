@@ -25,7 +25,7 @@ void http2_task(void *args)
     Serial.println("------------------------------------");
     Serial.printf("Account address: %s\n", account.address);
     Serial.printf("Account nonce: %d\n", account.nonce);
-    Serial.printf("Account balance: %lld\n", account.balance);
+    Serial.printf("Account balance: %f\n", account.balance);
     //Serial.printf("Account nonce: %s\n", account.state_root);
     Serial.println("------------------------------------");
     Serial.println("");
