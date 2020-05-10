@@ -186,6 +186,8 @@ int get_private_key(aergo_account *account){
 
 bool request_finished = false;
 
+uint8_t null_byte[1] = {0};
+
 unsigned char* to_send = NULL;
 int send_size = 0;
 
@@ -744,10 +746,11 @@ struct txn {
   uint64_t nonce;
   unsigned char account[AddressLength];      // decoded account address
   unsigned char recipient[AddressLength];    // decoded account address
-  uint64_t amount;              // variable-length big integer
+  uint8_t *amount;              // variable-length big-endian integer
+  int amount_len;
   char *payload;
   uint64_t gasLimit;
-  uint64_t gasPrice;            // variable-length big integer
+  uint64_t gasPrice;            // variable-length big-endian integer
   uint32_t type;
   unsigned char *chainIdHash;   // hash value of chain identifier in the block
   unsigned char sign[MBEDTLS_ECDSA_MAX_LEN]; // sender's signature for this TxBody
@@ -756,8 +759,7 @@ struct txn {
 
 bool encode_bigint(uint8_t **pptr, uint64_t value){
 
-  // TODO: encode the amount
-  //       it can use the bignum (mpi) from mbedtls
+  // TODO: encode the gasPrice
 
   //len = xxx(txn->amount);
   //memcpy(ptr, txn->amount, len); ptr += len;
@@ -783,7 +785,8 @@ bool calculate_tx_hash(struct txn *txn, unsigned char *hash, bool include_signat
     memcpy(ptr, txn->recipient, AddressLength); ptr += AddressLength;
   //}
 
-  encode_bigint(&ptr, txn->amount);
+  // it must be at least 1 byte in size!
+  memcpy(ptr, txn->amount, txn->amount_len); ptr += txn->amount_len;
 
   if (txn->payload){
     len = strlen(txn->payload);
@@ -862,8 +865,9 @@ bool encode_1_transaction(pb_ostream_t *stream, const pb_field_t *field, void * 
   message.body.payload.arg = txn->payload;
   message.body.payload.funcs.encode = &encode_string;
 
-  message.body.amount.arg = &txn->amount;
-  message.body.amount.funcs.encode = &encode_varuint64;
+  struct blob amt { .ptr = txn->amount, .size = txn->amount_len };
+  message.body.amount.arg = &amt;
+  message.body.amount.funcs.encode = &encode_blob;
 
   message.body.gasLimit = txn->gasLimit;
 
@@ -913,6 +917,41 @@ bool encode_transaction(uint8_t *buffer, size_t *psize, struct txn *txn) {
   return true;
 }
 
+///////////////////////////////////////////////////////////////////////////////////////////////////
+// COMMAND ENCODING
+///////////////////////////////////////////////////////////////////////////////////////////////////
+
+bool EncodeTransfer(uint8_t *buffer, size_t *psize, aergo_account *account, char *recipient, uint8_t *amount, int amount_len) {
+  struct txn txn;
+  char out[64]={0};
+
+  if (!amount || amount_len < 1) return false;
+
+  /* increment the account nonce */
+  account->nonce++;
+
+  txn.nonce = account->nonce;
+  copy_ecdsa_address(&account->keypair, txn.account, sizeof txn.account);
+  decode_address(recipient, strlen(recipient), txn.recipient, sizeof(txn.recipient));
+  txn.amount = amount;   // variable-length big-endian integer
+  txn.amount_len = amount_len;
+  txn.payload = NULL;
+  txn.gasLimit = 0;
+  txn.gasPrice = 0;      // variable-length big-endian integer
+  txn.type = TxType_NORMAL;
+  txn.chainIdHash = blockchain_id_hash;
+
+  encode_address(txn.account, sizeof txn.account, out, sizeof out);
+  DEBUG_PRINTF("account address: %s\n", out);
+  DEBUG_PRINTF("account nonce: %llu\n", account->nonce);
+
+  if (sign_transaction(&txn, &account->keypair) == false) {
+    return false;
+  }
+
+  return encode_transaction(buffer, psize, &txn);
+}
+
 bool EncodeContractCall(uint8_t *buffer, size_t *psize, char *contract_address, char *call_info, aergo_account *account) {
   struct txn txn;
   char out[64]={0};
@@ -923,10 +962,11 @@ bool EncodeContractCall(uint8_t *buffer, size_t *psize, char *contract_address, 
   txn.nonce = account->nonce;
   copy_ecdsa_address(&account->keypair, txn.account, sizeof txn.account);
   decode_address(contract_address, strlen(contract_address), txn.recipient, sizeof(txn.recipient));
-  txn.amount = 0;        // variable-length big integer
+  txn.amount = &null_byte;   // variable-length big-endian integer
+  txn.amount_len = 1;
   txn.payload = call_info;
   txn.gasLimit = 0;
-  txn.gasPrice = 0;      // variable-length big integer
+  txn.gasPrice = 0;          // variable-length big-endian integer
   txn.type = TxType_NORMAL;
   txn.chainIdHash = blockchain_id_hash;
 
@@ -1168,6 +1208,54 @@ bool check_blockchain_id_hash(aergo *instance) {
 ///////////////////////////////////////////////////////////////////////////////////////////////////
 // EXPORTED FUNCTIONS
 ///////////////////////////////////////////////////////////////////////////////////////////////////
+
+void aergo_transfer_bignum(aergo *instance, aergo_account *from_account, char *to_account, char *amount, int len){
+  uint8_t buffer[1024];
+  size_t size;
+
+  if (check_blockchain_id_hash(instance) == false) return;
+
+  // check if nonce was retrieved
+  if ( !account->init ){
+    if ( requestAccountState(instance, account) == false ) return;  // false;
+  }
+
+  size = sizeof(buffer);
+  if (EncodeTransfer(buffer, &size, account, to_account, amount, len)){
+    arg_aergo_account = account;
+    send_grpc_request(&instance->hd, "CommitTX", buffer, size, handle_transfer_response);
+  }
+
+}
+
+void aergo_transfer_str(aergo *instance, aergo_account *from_account, char *to_account, char *value){
+  char buf[16];
+  int len;
+
+  len = string_to_bignum(value, strlen(value), buf, sizeof(buf));
+
+  aergo_transfer_bignum(instance, from_account, to_account, buf, len);
+
+}
+
+void aergo_transfer(aergo *instance, aergo_account *from_account, char *to_account, double value){
+  char amount_str[36];
+
+  snprintf(amount_str, sizeof(amount_str), "%f", value);
+
+  aergo_transfer_str(instance, from_account, to_account, amount_str);
+
+}
+
+void aergo_transfer_int(aergo *instance, aergo_account *from_account, char *to_account, uint64_t integer, uint64_t decimal){
+  char amount_str[36];
+
+  snprintf(amount_str, sizeof(amount_str),
+           "%lld.%018lld", integer, decimal);
+
+  aergo_transfer_str(instance, from_account, to_account, amount_str);
+
+}
 
 void aergo_call_smart_contract(aergo *instance, char *contract_address, char *call_info, aergo_account *account){
   uint8_t buffer[1024];
