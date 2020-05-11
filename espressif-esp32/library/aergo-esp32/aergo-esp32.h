@@ -36,13 +36,13 @@ void aergo_free_account(aergo_account *account);
 
 // Transfer
 
-void aergo_transfer(aergo *instance, aergo_account *from_account, char *to_account, double value);
+bool aergo_transfer(aergo *instance, aergo_account *from_account, char *to_account, double value);
 
-void aergo_transfer_int(aergo *instance, aergo_account *from_account, char *to_account, uint64_t integer, uint64_t decimal);
+bool aergo_transfer_int(aergo *instance, aergo_account *from_account, char *to_account, uint64_t integer, uint64_t decimal);
 
-void aergo_transfer_str(aergo *instance, aergo_account *from_account, char *to_account, char *value);
+bool aergo_transfer_str(aergo *instance, aergo_account *from_account, char *to_account, char *value);
 
-void aergo_transfer_bignum(aergo *instance, aergo_account *from_account, char *to_account, char *amount, int len);
+bool aergo_transfer_bignum(aergo *instance, aergo_account *from_account, char *to_account, char *amount, int len);
 
 
 // Call smart contract function

@@ -230,5 +230,5 @@ message CommitResult {
 }
 
 message CommitResultList {
-  repeated CommitResult results = 1;
+  CommitResult results = 1;
 }

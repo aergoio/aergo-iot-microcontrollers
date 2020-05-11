@@ -606,7 +606,9 @@ int handle_transfer_response(struct sh2lib_handle *handle, const char *data, siz
         }
 
         /* Print the data contained in the message */
-        //DEBUG_PRINTF("response error status: %u\n", response.results.error);   TODO: fix this
+        DEBUG_PRINTF("response error status: %u\n", response.results.error);
+
+        arg_success = (response.results.error == CommitStatus_TX_OK);
 
     } else {
         DEBUG_PRINTLN("returned 0 bytes");
@@ -633,8 +635,8 @@ int handle_contract_call_response(struct sh2lib_handle *handle, const char *data
         pb_istream_t stream = pb_istream_from_buffer((const unsigned char *)&data[5], len-5);
 
         /* Set the callback functions */
-        //response.value.funcs.decode = &print_string;
-        //response.value.arg = (void*)"Result";
+        //response.results.funcs.decode = &decode_commit_result;
+        //response.results.arg = ...;
 
         /* Now we are ready to decode the message */
         status = pb_decode(&stream, CommitResultList_fields, &response);
@@ -646,7 +648,9 @@ int handle_contract_call_response(struct sh2lib_handle *handle, const char *data
         }
 
         /* Print the data contained in the message */
-        //DEBUG_PRINTF("response error status: %u\n", response.results.error);   TODO: fix this
+        DEBUG_PRINTF("response error status: %u\n", response.results.error);
+
+        arg_success = (response.results.error == CommitStatus_TX_OK);
 
     } else {
         DEBUG_PRINTLN("returned 0 bytes");
@@ -686,9 +690,6 @@ int handle_query_response(struct sh2lib_handle *handle, const char *data, size_t
         }
 
         arg_success = true;
-
-        /* Print the data contained in the message */
-        //DEBUG_PRINTF("xxxxx: %llu\n", block.header.confirms);
 
     } else {
         DEBUG_PRINTLN("returned 0 bytes");
@@ -1250,51 +1251,53 @@ bool check_blockchain_id_hash(aergo *instance) {
 // EXPORTED FUNCTIONS
 ///////////////////////////////////////////////////////////////////////////////////////////////////
 
-void aergo_transfer_bignum(aergo *instance, aergo_account *from_account, char *to_account, char *amount, int len){
+bool aergo_transfer_bignum(aergo *instance, aergo_account *from_account, char *to_account, char *amount, int len){
   uint8_t buffer[1024];
   size_t size;
 
-  if (check_blockchain_id_hash(instance) == false) return;
+  if (check_blockchain_id_hash(instance) == false) return false;
 
   // check if nonce was retrieved
   if ( !from_account->init ){
-    if ( requestAccountState(instance, from_account) == false ) return;  // false;
+    if ( requestAccountState(instance, from_account) == false ) return false;
   }
 
+  arg_success = false;
   size = sizeof(buffer);
   if (EncodeTransfer(buffer, &size, from_account, to_account, amount, len)){
     arg_aergo_account = from_account;
     send_grpc_request(&instance->hd, "CommitTX", buffer, size, handle_transfer_response);
   }
 
+  return arg_success;
 }
 
-void aergo_transfer_str(aergo *instance, aergo_account *from_account, char *to_account, char *value){
+bool aergo_transfer_str(aergo *instance, aergo_account *from_account, char *to_account, char *value){
   char buf[16];
   int len;
 
   len = string_to_bignum(value, strlen(value), buf, sizeof(buf));
 
-  aergo_transfer_bignum(instance, from_account, to_account, buf, len);
+  return aergo_transfer_bignum(instance, from_account, to_account, buf, len);
 
 }
 
-void aergo_transfer(aergo *instance, aergo_account *from_account, char *to_account, double value){
+bool aergo_transfer(aergo *instance, aergo_account *from_account, char *to_account, double value){
   char amount_str[36];
 
   snprintf(amount_str, sizeof(amount_str), "%f", value);
 
-  aergo_transfer_str(instance, from_account, to_account, amount_str);
+  return aergo_transfer_str(instance, from_account, to_account, amount_str);
 
 }
 
-void aergo_transfer_int(aergo *instance, aergo_account *from_account, char *to_account, uint64_t integer, uint64_t decimal){
+bool aergo_transfer_int(aergo *instance, aergo_account *from_account, char *to_account, uint64_t integer, uint64_t decimal){
   char amount_str[36];
 
   snprintf(amount_str, sizeof(amount_str),
            "%lld.%018lld", integer, decimal);
 
-  aergo_transfer_str(instance, from_account, to_account, amount_str);
+  return aergo_transfer_str(instance, from_account, to_account, amount_str);
 
 }
 
@@ -1312,13 +1315,14 @@ bool aergo_call_smart_contract_json(aergo *instance, aergo_account *account, cha
   snprintf(call_info, sizeof(call_info),
            "{\"Name\":\"%s\", \"Args\":%s}", function, args);
 
+  arg_success = false;
   size = sizeof(buffer);
   if (EncodeContractCall(buffer, &size, contract_address, call_info, account)){
     arg_aergo_account = account;
     send_grpc_request(&instance->hd, "CommitTX", buffer, size, handle_contract_call_response);
   }
 
-  return true;  //! it must check the result
+  return arg_success;
 }
 
 bool aergo_call_smart_contract(aergo *instance, aergo_account *account, char *contract_address, char *function, char *types, ...){
