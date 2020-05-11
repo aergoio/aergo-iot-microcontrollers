@@ -58,16 +58,13 @@ void http2_task(void *args){
     // Check if the new value differs enough from the previous sent value
     if (abs(value - prev_value) >= VALUE_DIFF_THRESHOLD) {
       // Send the value to the smart contract
-      char json[256];
 
       Serial.println("------------------------------------");
       Serial.printf("Sending value: %d\n", value);
 
-      sprintf(json, "{\"Name\":\"update_value\", \"Args\":[%d]}", value);
-      aergo_call_smart_contract(&instance,
+      aergo_call_smart_contract(&instance, &account,
         "AmhCzNds4F9i5Duoyai6FfzSiF5Re5PEhcH8kQWkKNbBP5Z4djcX",
-        json,
-        &account);
+        "update_value", "i", value);
 
       Serial.println("------------------------------------");
       prev_value = value;

@@ -19,10 +19,10 @@ void http2_task(void *args)
   Serial.println("Connected");
 
   bool ret = aergo_query_smart_contract(
+    response, sizeof response,
     &instance,
     "AmgLnRaGFLyvCPCEMHYJHooufT1c1pENTRGeV78WNPTxwQ2RYUW7",
-    "{\"Name\":\"hello\"}",
-    response, sizeof response
+    "hello", NULL
   );
 
   if (ret == true) {

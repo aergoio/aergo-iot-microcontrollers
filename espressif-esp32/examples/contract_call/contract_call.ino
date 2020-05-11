@@ -47,10 +47,9 @@ void http2_task(void *args)
         if( strcmp(buf,"q")==0 || strcmp(buf,"Q")==0 ) break;
         Serial.printf("you typed: %s\n", buf);
 
-        char json[256];
-        sprintf(json, "{\"Name\":\"set_name\", \"Args\":[\"%s\"]}", buf);
-
-        aergo_call_smart_contract(&instance, "AmgLnRaGFLyvCPCEMHYJHooufT1c1pENTRGeV78WNPTxwQ2RYUW7", json, &account);
+        aergo_call_smart_contract(&instance, &account,
+           "AmgLnRaGFLyvCPCEMHYJHooufT1c1pENTRGeV78WNPTxwQ2RYUW7",
+           "set_name", "s", buf);
 
       }
       Serial.println("done.\n");

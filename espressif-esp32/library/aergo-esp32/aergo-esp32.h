@@ -47,12 +47,16 @@ void aergo_transfer_bignum(aergo *instance, aergo_account *from_account, char *t
 
 // Call smart contract function
 
-void aergo_call_smart_contract(aergo *instance, char *contract_address, char *call_info, aergo_account *account);
+bool aergo_call_smart_contract_json(aergo *instance, aergo_account *account, char *contract_address, char *function, char *args);
+
+bool aergo_call_smart_contract(aergo *instance, aergo_account *account, char *contract_address, char *function, char *types, ...);
 
 
 // Query smart contract
 
-bool aergo_query_smart_contract(aergo *instance, char *contract_address, char *query_info, char *result, int size);
+bool aergo_query_smart_contract_json(char *result, int resultlen, aergo *instance, char *contract_address, char *function, char *args);
+
+bool aergo_query_smart_contract(char *result, int resultlen, aergo *instance, char *contract_address, char *function, char *types, ...);
 
 
 // Smart contract events

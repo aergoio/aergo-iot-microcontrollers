@@ -1,6 +1,13 @@
 //#include <stdio.h>
 //#include <stdint.h>
+#include <stdarg.h>
+#include <stdbool.h>
 #include "mbedtls/bignum.h"
+
+static const char hexdigits[] = {
+  '0', '1', '2', '3', '4', '5', '6', '7',
+  '8', '9', 'A', 'B', 'C', 'D', 'E', 'F' 
+};
 
 // convert a value from big endian variable integer to string with
 // decimal point. uses 18 decimal digits
@@ -38,7 +45,7 @@ loc_failed:
 // the string can optionally have a decimal point. uses 18 decimal digits
 int string_to_bignum(uint8_t *str, int len, uint8_t *out, int outlen) {
     mbedtls_mpi value;
-    char integer[36], decimal[36], *p;
+    uint8_t integer[36], decimal[36], *p;
     int i;
 
     p = strchr(str, '.');
@@ -73,4 +80,71 @@ int string_to_bignum(uint8_t *str, int len, uint8_t *out, int outlen) {
     mbedtls_mpi_free(&value);
 
     return len;
+
+loc_failed:
+    mbedtls_mpi_free(&value);
+    return -1;
+}
+
+bool arguments_to_json(char *buf, int bufsize, char *types, va_list ap){
+  char c, *dest;
+  int i, dsize;
+
+  buf[0] = '[';
+  dest = &buf[1];
+  dsize = bufsize - 2;
+
+  for(i=0; (c = types[i])!=0; i++){
+    if( c=='s' ){
+      char *limit = buf + bufsize - 4;
+      char *z = va_arg(ap, char*);
+      if (i > 0) *dest++ = ',';
+      *dest++ = '"';
+      while (*z) {
+        *dest++ = *z++;
+        if (dest > limit) goto loc_invalid;
+      }
+      *dest++ = '"';
+    }else if( c=='i' ){
+      if (dsize < 12) goto loc_invalid;
+      if (i > 0) *dest++ = ',';
+      snprintf(dest, dsize, "%d", va_arg(ap, int));
+      dest += strlen(dest);
+    }else if( c=='l' ){
+      if (dsize < 12) goto loc_invalid;
+      if (i > 0) *dest++ = ',';
+      snprintf(dest, dsize, "%lld", va_arg(ap, int64_t));
+      dest += strlen(dest);
+    //}else if( c=='f' ){  -- floats are promoted to double
+    }else if( c=='d' ){
+      if (dsize < 26) goto loc_invalid;
+      if (i > 0) *dest++ = ',';
+      snprintf(dest, dsize, "%f", va_arg(ap, double));
+      dest += strlen(dest);
+    }else if( c=='b' ){
+      char *ptr = va_arg(ap, char*);
+      int size = va_arg(ap, int);
+      if (dsize < (size * 2) + 3) goto loc_invalid;
+      if (i > 0) *dest++ = ',';
+      *dest++ = '"';
+      while (size) {
+        c = *ptr++;
+        *(dest++) = hexdigits[(c>>4)&0xf];
+        *(dest++) = hexdigits[c&0xf];
+        size--;
+      }
+      *dest++ = '"';
+    }else{
+      goto loc_invalid;
+    }
+    // update the remaining size of the destination buffer
+    dsize = bufsize - (dest - buf);
+  }
+
+  *dest++ = ']';
+  *dest++ = 0;
+
+  return true;
+loc_invalid:
+  return false;
 }

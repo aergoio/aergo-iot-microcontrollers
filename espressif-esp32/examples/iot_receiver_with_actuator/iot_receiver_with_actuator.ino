@@ -73,10 +73,10 @@ void http2_task(void *args){
   // First retrieve the state in which the actuator should be
 
   ret = aergo_query_smart_contract(
+    response, sizeof response,
     &instance,
     "AmhCzNds4F9i5Duoyai6FfzSiF5Re5PEhcH8kQWkKNbBP5Z4djcX",
-    "{\"Name\":\"get_last_state\"}",
-    response, sizeof response
+    "get_last_state", NULL
   );
 
   if (ret == true) {

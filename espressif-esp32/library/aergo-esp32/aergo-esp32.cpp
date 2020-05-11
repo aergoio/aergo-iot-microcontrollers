@@ -19,8 +19,9 @@ extern "C" {
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////
 
-#if defined(DEBUG_MESSAGES)
 #pragma GCC diagnostic warning "-fpermissive"
+
+#if defined(DEBUG_MESSAGES)
 #define DEBUG_PRINT      Serial.print
 #define DEBUG_PRINTF     Serial.printf
 #define DEBUG_PRINTLN    Serial.println
@@ -581,6 +582,46 @@ int handle_block_response(struct sh2lib_handle *handle, const char *data, size_t
     return 0;
 }
 
+int handle_transfer_response(struct sh2lib_handle *handle, const char *data, size_t len, int flags) {
+    if (len > 0) {
+        int i, status;
+        CommitResultList response = CommitResultList_init_zero;
+
+        DEBUG_PRINT_BUFFER("returned", data, len);
+
+        /* Create a stream that reads from the buffer */
+        pb_istream_t stream = pb_istream_from_buffer((const unsigned char *)&data[5], len-5);
+
+        /* Set the callback functions */
+        //response.results.funcs.decode = &decode_commit_result;
+        //response.results.arg = ...;
+
+        /* Now we are ready to decode the message */
+        status = pb_decode(&stream, CommitResultList_fields, &response);
+
+        /* Check for errors... */
+        if (!status) {
+            DEBUG_PRINTF("Decoding failed: %s\n", PB_GET_ERROR(&stream));
+            return 1;
+        }
+
+        /* Print the data contained in the message */
+        //DEBUG_PRINTF("response error status: %u\n", response.results.error);   TODO: fix this
+
+    } else {
+        DEBUG_PRINTLN("returned 0 bytes");
+    }
+
+    if (flags == DATA_RECV_FRAME_COMPLETE) {
+        request_finished = true;
+        DEBUG_PRINTLN("COMPLETE FRAME RECEIVED");
+    } else if (flags == DATA_RECV_RST_STREAM) {
+        request_finished = true;
+        DEBUG_PRINTLN("STREAM CLOSED");
+    }
+    return 0;
+}
+
 int handle_contract_call_response(struct sh2lib_handle *handle, const char *data, size_t len, int flags) {
     if (len > 0) {
         int i, status;
@@ -962,7 +1003,7 @@ bool EncodeContractCall(uint8_t *buffer, size_t *psize, char *contract_address, 
   txn.nonce = account->nonce;
   copy_ecdsa_address(&account->keypair, txn.account, sizeof txn.account);
   decode_address(contract_address, strlen(contract_address), txn.recipient, sizeof(txn.recipient));
-  txn.amount = &null_byte;   // variable-length big-endian integer
+  txn.amount = null_byte;   // variable-length big-endian integer
   txn.amount_len = 1;
   txn.payload = call_info;
   txn.gasLimit = 0;
@@ -1216,13 +1257,13 @@ void aergo_transfer_bignum(aergo *instance, aergo_account *from_account, char *t
   if (check_blockchain_id_hash(instance) == false) return;
 
   // check if nonce was retrieved
-  if ( !account->init ){
-    if ( requestAccountState(instance, account) == false ) return;  // false;
+  if ( !from_account->init ){
+    if ( requestAccountState(instance, from_account) == false ) return;  // false;
   }
 
   size = sizeof(buffer);
-  if (EncodeTransfer(buffer, &size, account, to_account, amount, len)){
-    arg_aergo_account = account;
+  if (EncodeTransfer(buffer, &size, from_account, to_account, amount, len)){
+    arg_aergo_account = from_account;
     send_grpc_request(&instance->hd, "CommitTX", buffer, size, handle_transfer_response);
   }
 
@@ -1257,16 +1298,19 @@ void aergo_transfer_int(aergo *instance, aergo_account *from_account, char *to_a
 
 }
 
-void aergo_call_smart_contract(aergo *instance, char *contract_address, char *call_info, aergo_account *account){
-  uint8_t buffer[1024];
+bool aergo_call_smart_contract_json(aergo *instance, aergo_account *account, char *contract_address, char *function, char *args){
+  uint8_t call_info[512], buffer[1024];
   size_t size;
 
-  if (check_blockchain_id_hash(instance) == false) return;
+  if (check_blockchain_id_hash(instance) == false) return false;
 
   // check if nonce was retrieved
   if ( !account->init ){
-    if ( requestAccountState(instance, account) == false ) return;  // false;
+    if ( requestAccountState(instance, account) == false ) return false;
   }
+
+  snprintf(call_info, sizeof(call_info),
+           "{\"Name\":\"%s\", \"Args\":%s}", function, args);
 
   size = sizeof(buffer);
   if (EncodeContractCall(buffer, &size, contract_address, call_info, account)){
@@ -1274,14 +1318,36 @@ void aergo_call_smart_contract(aergo *instance, char *contract_address, char *ca
     send_grpc_request(&instance->hd, "CommitTX", buffer, size, handle_contract_call_response);
   }
 
+  return true;  //! it must check the result
 }
 
-bool aergo_query_smart_contract(aergo *instance, char *contract_address, char *query_info, char *result, int len){
-  uint8_t buffer[256];
+bool aergo_call_smart_contract(aergo *instance, aergo_account *account, char *contract_address, char *function, char *types, ...){
+  uint8_t args[512];
+  va_list ap;
+  bool ret;
+
+  va_start(ap, types);
+  ret = arguments_to_json(args, sizeof(args), types, ap);
+  va_end(ap);
+  if (ret == false) return false;
+
+  return aergo_call_smart_contract_json(instance, account, contract_address, function, args);
+}
+
+bool aergo_query_smart_contract_json(char *result, int resultlen, aergo *instance, char *contract_address, char *function, char *args){
+  uint8_t query_info[512], buffer[512];
   size_t size;
 
-  arg_str.ptr = (uint8_t*) result;
-  arg_str.size = len;
+  if (args) {
+    snprintf(query_info, sizeof(query_info),
+            "{\"Name\":\"%s\", \"Args\":%s}", function, args);
+  } else {
+    snprintf(query_info, sizeof(query_info),
+            "{\"Name\":\"%s\"}", function);
+  }
+
+  arg_str.ptr = result;
+  arg_str.size = resultlen;
   arg_success = false;
 
   size = sizeof(buffer);
@@ -1290,6 +1356,24 @@ bool aergo_query_smart_contract(aergo *instance, char *contract_address, char *q
   }
 
   return arg_success;
+}
+
+bool aergo_query_smart_contract(char *result, int resultlen, aergo *instance, char *contract_address, char *function, char *types, ...){
+  uint8_t args[512], *pargs;
+  va_list ap;
+  bool ret;
+
+  if (types && types[0]) {
+    va_start(ap, types);
+    ret = arguments_to_json(args, sizeof(args), types, ap);
+    va_end(ap);
+    if (ret == false) return false;
+    pargs = args;
+  } else {
+    pargs = NULL;
+  }
+
+  return aergo_query_smart_contract_json(result, resultlen, instance, contract_address, function, pargs);
 }
 
 bool aergo_contract_events_subscribe(aergo *instance, char *contract_address, char *event_name, contract_event_cb cb){
