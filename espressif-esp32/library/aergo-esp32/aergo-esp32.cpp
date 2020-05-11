@@ -980,7 +980,7 @@ bool EncodeTransfer(uint8_t *buffer, size_t *psize, aergo_account *account, char
   txn.payload = NULL;
   txn.gasLimit = 0;
   txn.gasPrice = 0;      // variable-length big-endian integer
-  txn.type = TxType_NORMAL;
+  txn.type = TxType_TRANSFER;
   txn.chainIdHash = blockchain_id_hash;
 
   encode_address(txn.account, sizeof txn.account, out, sizeof out);
@@ -1009,7 +1009,7 @@ bool EncodeContractCall(uint8_t *buffer, size_t *psize, char *contract_address, 
   txn.payload = call_info;
   txn.gasLimit = 0;
   txn.gasPrice = 0;          // variable-length big-endian integer
-  txn.type = TxType_NORMAL;
+  txn.type = TxType_CALL;
   txn.chainIdHash = blockchain_id_hash;
 
   encode_address(txn.account, sizeof txn.account, out, sizeof out);

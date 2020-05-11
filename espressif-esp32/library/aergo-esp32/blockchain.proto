@@ -3,38 +3,6 @@ syntax = "proto3";
 //package types;
 //option go_package = "github.com/aergoio/aergo/types";
 
-message Empty {
-
-}
-
-message SingleBytes {
-  bytes value = 1;
-}
-
-message BlockchainStatus {
-  bytes best_block_hash = 1;
-  uint64 best_height = 2;
-  string consensus_info = 3;
-  bytes best_chain_id_hash = 4;
-}
-
-message AccountAddress {
-  bytes value = 1;
-}
-
-message AccountAndRoot {
-  bytes Account = 1;
-  bytes Root = 2;
-  bool Compressed = 3;
-}
-
-message BlockMetadata {
-  bytes hash = 1;
-  BlockHeader header = 2;
-  int32 txcount = 3;
-  int64 size = 4; // blocksize in bytes
-}
-
 message Block {
   bytes hash = 1;
   BlockHeader header = 2;
@@ -53,8 +21,9 @@ message BlockHeader {
   bytes pubKey = 9; // block producer's public key
   bytes coinbaseAccount = 10; // address of account to receive fees
   bytes sign = 11; // block producer's signature of BlockHeader
-  // CAUTION: THE SIGN MUST BE THE LAST FIELD.
-  // DO NOT ADD A NEW FIELD AFTER THE SIGN FIELD.
+  bytes consensus = 12; // consensus meta
+  // CAUTION: WHENEVER A NEW FIELD ADDED HERE, types.lastFieldOfBH MUST BE
+  // REPLACE BY IT.
 }
 
 message BlockBody {
@@ -69,6 +38,10 @@ enum TxType {
   NORMAL = 0;
   GOVERNANCE = 1;
   REDEPLOY = 2;
+  FEEDELEGATION = 3;
+  TRANSFER = 4;
+  CALL = 5;
+  DEPLOY = 6;
 }
 
 message Tx {
@@ -82,7 +55,7 @@ message TxBody {
   bytes recipient = 3; // decoded account address
   bytes amount = 4; // variable-length big integer
   bytes payload = 5;
-  uint64 gasLimit = 6; // currently not used
+  uint64 gasLimit = 6; // maximum gas used for this transaction. 0 = no limit
   bytes gasPrice = 7; // variable-length big integer. currently not used
   TxType type = 8;
   bytes chainIdHash = 9; // hash value of chain identifier in the block
@@ -144,12 +117,13 @@ message Receipt {
   bytes cumulativeFeeUsed = 6;
   bytes bloom = 7;
   repeated Event events = 8;
-
   uint64 blockNo = 9;
   bytes blockHash = 10;
   int32 txIndex = 11;
   bytes from = 12;
   bytes to = 13;
+  bool  feeDelegation = 14;
+  uint64 gasUsed = 15;
 }
 
 message Event {
@@ -173,6 +147,7 @@ message Function {
   repeated FnArgument arguments = 2;
   bool payable = 3;
   bool view = 4;
+  bool fee_delegation = 5;
 }
 
 message StateVar {
@@ -211,6 +186,160 @@ message FilterInfo {
   int32 recentBlockCnt = 7;
 }
 
+message Proposal {
+  string id = 1;
+  string description = 3;
+  uint32 multipleChoice = 6;
+}
+
+
+
+//// from account.proto: ///////////////////////////////////////////////////////
+
+message Account {
+  bytes address = 1;
+}
+
+message AccountList {
+  repeated Account accounts = 1;
+}
+
+
+
+//// from rpc.proto: ///////////////////////////////////////////////////////
+
+
+// BlockchainStatus is current status of blockchain
+message BlockchainStatus {
+  bytes best_block_hash = 1;
+  uint64 best_height = 2;
+  string consensus_info = 3;
+  bytes best_chain_id_hash = 4;
+  ChainInfo chain_info = 5;
+}
+
+message ChainId {
+  string magic = 1;
+  bool public = 2;
+  bool mainnet = 3;
+  string consensus = 4;
+  int32 version = 5;
+}
+
+// ChainInfo returns chain configuration
+message ChainInfo {
+  ChainId id = 1;
+  uint32 bpNumber = 2;
+  uint64 maxblocksize = 3;
+  bytes maxtokens = 4;
+  bytes stakingminimum = 5;
+  bytes totalstaking = 6;
+  bytes gasprice = 7;
+  bytes nameprice = 8;
+  bytes totalvotingpower = 9;
+  bytes votingreward= 10;
+}
+
+// ChainStats corresponds to a chain statistics report.
+message ChainStats {
+    string report = 1;
+}
+
+message Input {
+  bytes hash = 1;
+  repeated bytes address = 2;
+  bytes value = 3;
+  bytes script = 4;
+}
+
+
+message Output {
+  uint32 index = 1;
+  bytes address = 2;
+  bytes value = 3;
+  bytes script = 4;
+}
+
+message Empty {
+
+}
+
+message SingleBytes {
+  bytes value = 1;
+}
+
+message SingleString {
+  string value = 1;
+}
+
+message AccountAddress {
+  bytes value = 1;
+}
+
+message AccountAndRoot {
+  bytes Account = 1;
+  bytes Root = 2;
+  bool Compressed = 3;
+}
+
+/*
+message Peer {
+  PeerAddress address = 1;
+  NewBlockNotice bestblock = 2;
+  int32 state = 3;
+  bool hidden = 4;
+  int64 lashCheck = 5;
+  bool selfpeer = 6;
+  string version = 7;
+  repeated AgentCertificate certificates = 8;
+  PeerRole acceptedRole = 9;
+}
+
+message PeerList {
+  repeated Peer peers=1;
+}
+*/
+
+message ListParams {
+  bytes hash = 1;
+  uint64 height = 2;
+  uint32 size = 3;
+  uint32 offset = 4;
+  bool asc = 5;
+}
+
+message PageParams {
+  uint32 offset = 1;
+  uint32 size = 2;
+}
+
+message BlockBodyPaged {
+  uint32 total = 1;
+  uint32 offset = 2;
+  uint32 size = 3;
+  BlockBody body = 4;
+}
+
+message BlockBodyParams {
+  bytes hashornumber = 1;
+  PageParams paging = 2;
+}
+
+message BlockHeaderList {
+  repeated Block blocks = 1;
+}
+
+message BlockMetadata {
+  bytes hash = 1;
+  BlockHeader header = 2;
+  int32 txcount = 3;
+  int64 size = 4; // blocksize in bytes
+}
+
+message BlockMetadataList {
+  repeated BlockMetadata blocks = 1;
+}
+
 enum CommitStatus {
   TX_OK = 0;
   TX_NONCE_TOO_LOW = 1;
@@ -229,6 +358,116 @@ message CommitResult {
   string detail = 3;
 }
 
+// ATTENTION: the 'repeated' keyword was removed here, just for C
 message CommitResultList {
   CommitResult results = 1;
+}
+
+enum VerifyStatus {
+  VERIFY_STATUS_OK = 0;
+  VERIFY_STATUS_SIGN_NOT_MATCH = 1;
+  VERIFY_STATUS_INVALID_HASH = 2; //TODO: not yet impl
+}
+
+message VerifyResult {
+  Tx tx = 1;
+  VerifyStatus error = 2;
+}
+
+message Personal {
+  string passphrase = 1;
+  Account account = 2;
+}
+
+message ImportFormat{
+  SingleBytes wif = 1;
+  string oldpass = 2;
+  string newpass = 3;
+  SingleBytes keystore = 4;
+}
+
+message Staking {
+  bytes amount = 1;
+  uint64 when = 2;
+}
+
+message Vote {
+  bytes candidate = 1;
+  bytes amount = 2;
+}
+
+message VoteParams {
+  string id = 1;
+  uint32 count = 2;
+}
+
+message AccountVoteInfo {
+  Staking staking = 1;
+  repeated VoteInfo voting = 2;
+}
+
+message VoteInfo {
+  string id = 1;
+  repeated string candidates = 2;
+  string amount = 3;
+}
+
+message VoteList {
+  repeated Vote votes = 1;
+  string id = 2;
+}
+
+message NodeReq {
+  bytes timeout = 1;
+  bytes component = 2;
+}
+
+message Name {
+  string name = 1;
+  uint64 blockNo = 2;
+}
+
+message NameInfo {
+  Name name = 1;
+  bytes owner = 2;
+  bytes destination = 3;
+}
+
+message PeersParams {
+  bool noHidden = 1;
+  bool showSelf = 2;
+}
+
+message KeyParams {
+  repeated string key = 1;
+}
+
+message ServerInfo {
+  map<string,string> status = 1;
+  map<string,ConfigItem> config = 2;
+}
+
+message ConfigItem {
+  map<string,string> props = 2;
+}
+
+message EventList {
+  repeated Event events = 1;
+}
+
+// info and bps is json string
+message ConsensusInfo {
+  string type = 1;
+  string info = 2;
+  repeated string bps = 3;
+}
+
+message EnterpriseConfigKey {
+  string key = 1;
+}
+
+message EnterpriseConfig {
+  string key = 1;
+  bool on = 2;
+  repeated string values = 3;
 }
