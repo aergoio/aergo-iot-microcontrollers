@@ -41,7 +41,7 @@ void http2_task(void *args){
   int rc = get_private_key(&account);
 
 
-  requestAccountState(&instance, &account);
+  aergo_get_account_state(&instance, &account);
   Serial.println("");
   Serial.println("------------------------------------");
   Serial.printf ("Account address: %s\n", account.address);

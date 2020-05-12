@@ -24,12 +24,12 @@ struct aergo_account {
   uint64_t nonce;
   double balance;
   uint8_t state_root[32];
-  bool init;
+  bool is_updated;
 };
 
 int get_private_key(aergo_account *account);
 
-bool requestAccountState(aergo *instance, aergo_account *account);
+bool aergo_get_account_state(aergo *instance, aergo_account *account);
 
 void aergo_free_account(aergo_account *account);
 

@@ -520,7 +520,7 @@ int handle_account_state_response(struct sh2lib_handle *handle, const char *data
             return 1;
         }
 
-        arg_aergo_account->init = true;
+        arg_aergo_account->is_updated = true;
         arg_aergo_account->nonce = account_state.nonce;
 
         /* Print the data contained in the message */
@@ -1367,8 +1367,8 @@ bool aergo_transfer_bignum(aergo *instance, char *txn_hash, aergo_account *from_
   if (check_blockchain_id_hash(instance) == false) return false;
 
   // check if nonce was retrieved
-  if ( !from_account->init ){
-    if ( requestAccountState(instance, from_account) == false ) return false;
+  if ( !from_account->is_updated ){
+    if ( aergo_get_account_state(instance, from_account) == false ) return false;
   }
 
   arg_success = false;
@@ -1417,8 +1417,8 @@ bool aergo_call_smart_contract_json(aergo *instance, char *txn_hash, aergo_accou
   if (check_blockchain_id_hash(instance) == false) return false;
 
   // check if nonce was retrieved
-  if ( !account->init ){
-    if ( requestAccountState(instance, account) == false ) return false;
+  if ( !account->is_updated ){
+    if ( aergo_get_account_state(instance, account) == false ) return false;
   }
 
   snprintf(call_info, sizeof(call_info),
@@ -1554,11 +1554,11 @@ void aergo_get_blockchain_status(aergo *instance){
 
 }
 
-bool requestAccountState(aergo *instance, aergo_account *account){
+bool aergo_get_account_state(aergo *instance, aergo_account *account){
   uint8_t buffer[128];
   size_t size;
 
-  account->init = false;
+  account->is_updated = false;
 
   size = sizeof(buffer);
   if (EncodeAccountAddress(buffer, &size, &account->keypair)){
@@ -1571,7 +1571,7 @@ bool requestAccountState(aergo *instance, aergo_account *account){
   copy_ecdsa_address(&account->keypair, buffer, sizeof buffer);
   encode_address(buffer, AddressLength, account->address, sizeof account->address);
 
-  return account->init;
+  return account->is_updated;
 }
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////
