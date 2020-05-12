@@ -220,7 +220,7 @@ message BlockchainStatus {
 
 message ChainId {
   string magic = 1;
-  bool public = 2;
+  bool is_public = 2;
   bool mainnet = 3;
   string consensus = 4;
   int32 version = 5;

@@ -25,6 +25,7 @@ void http2_task(void *args)
   Serial.println("");
   Serial.println("------------------------------------");
   Serial.printf("Account address: %s\n", account.address);
+  Serial.printf("Account balance: %f\n", account.balance);
   Serial.printf("Account nonce: %d\n", account.nonce);
 
 
@@ -47,12 +48,40 @@ void http2_task(void *args)
         if( strcmp(buf,"q")==0 || strcmp(buf,"Q")==0 ) break;
         Serial.printf("you typed: %s\n", buf);
 
-        aergo_call_smart_contract(&instance, &account,
-           "AmgLnRaGFLyvCPCEMHYJHooufT1c1pENTRGeV78WNPTxwQ2RYUW7",
-           "set_name", "s", buf);
+        char txn_hash[32];
+
+        bool ret = aergo_call_smart_contract(&instance,
+            txn_hash,
+            &account,
+            "AmgLnRaGFLyvCPCEMHYJHooufT1c1pENTRGeV78WNPTxwQ2RYUW7",
+            "set_name", "s", buf);
+
+        if (ret == true) {
+          struct transaction_receipt receipt;
+          Serial.println("done.");
+          delay(2000);
+          ret = false;
+          while (ret == false) {
+            Serial.println("getting transaction receipt...");
+            ret = aergo_get_receipt(&instance, txn_hash, &receipt);
+            if (ret == true) {
+              Serial.println("\nTransaction Receipt:");
+              Serial.printf("status: %s\n", receipt.status);
+              Serial.printf("ret: %s\n", receipt.ret);
+              Serial.printf("blockNo: %llu\n", receipt.blockNo);
+              Serial.printf("txIndex: %d\n", receipt.txIndex);
+              Serial.printf("gasUsed: %llu\n", receipt.gasUsed);
+              Serial.printf("feeUsed: %f\n", receipt.feeUsed);
+            } else {
+              Serial.println("failed getting transaction receipt");
+              delay(1000);
+            }
+          }
+        } else {
+          Serial.println("failed sending transaction");
+        }
 
       }
-      Serial.println("done.\n");
       Serial.println("------------------------------------");
       Serial.println("Type your value for new transaction:");
     }

@@ -44,8 +44,9 @@ void http2_task(void *args){
   requestAccountState(&instance, &account);
   Serial.println("");
   Serial.println("------------------------------------");
-  Serial.printf("Account address: %s\n", account.address);
-  Serial.printf("Account nonce: %d\n", account.nonce);
+  Serial.printf ("Account address: %s\n", account.address);
+  Serial.printf ("Account balance: %f\n", account.balance);
+  Serial.printf ("Account nonce: %d\n", account.nonce);
 
 
   int prev_value = 0;
@@ -60,9 +61,11 @@ void http2_task(void *args){
       // Send the value to the smart contract
 
       Serial.println("------------------------------------");
-      Serial.printf("Sending value: %d\n", value);
+      Serial.printf ("Sending value: %d\n", value);
 
-      aergo_call_smart_contract(&instance, &account,
+      bool ret = aergo_call_smart_contract(&instance,
+        txn_hash,
+        &account,
         "AmhCzNds4F9i5Duoyai6FfzSiF5Re5PEhcH8kQWkKNbBP5Z4djcX",
         "update_value", "i", value);
 

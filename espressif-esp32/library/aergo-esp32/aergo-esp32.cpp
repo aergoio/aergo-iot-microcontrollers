@@ -21,6 +21,8 @@ extern "C" {
 
 #pragma GCC diagnostic warning "-fpermissive"
 
+//#define DEBUG_MESSAGES 1
+
 #if defined(DEBUG_MESSAGES)
 #define DEBUG_PRINT      Serial.print
 #define DEBUG_PRINTF     Serial.printf
@@ -442,6 +444,8 @@ uint8_t blockchain_id_hash[32] = {0};
 
 aergo_account *arg_aergo_account;
 
+struct transaction_receipt *arg_receipt;
+
 struct blob arg_str;
 
 bool arg_success;
@@ -726,12 +730,15 @@ int handle_event_response(struct sh2lib_handle *handle, const char *data, size_t
         pb_istream_t stream = pb_istream_from_buffer((const unsigned char *)&data[5], len-5);
 
         /* Set the callback functions */
+
         struct blob s1 { .ptr = (uint8_t*) raw_address, .size = sizeof raw_address };
         response.contractAddress.arg = &s1;
         response.contractAddress.funcs.decode = &read_blob;
+
         struct blob s2 { .ptr = (uint8_t*) event.eventName, .size = sizeof event.eventName };
         response.eventName.arg = &s2;
         response.eventName.funcs.decode = &read_string;
+
         struct blob s3 { .ptr = (uint8_t*) event.jsonArgs, .size = sizeof event.jsonArgs };
         response.jsonArgs.arg = &s3;
         response.jsonArgs.funcs.decode = &read_string;
@@ -739,6 +746,7 @@ int handle_event_response(struct sh2lib_handle *handle, const char *data, size_t
         struct blob b1 { .ptr = (uint8_t*) event.txHash, .size = sizeof event.txHash };
         response.txHash.arg = &b1;
         response.txHash.funcs.decode = &read_blob;
+
         struct blob b2 { .ptr = (uint8_t*) event.blockHash, .size = sizeof event.blockHash };
         response.blockHash.arg = &b2;
         response.blockHash.funcs.decode = &read_blob;
@@ -776,6 +784,76 @@ int handle_event_response(struct sh2lib_handle *handle, const char *data, size_t
     return 0;
 }
 
+int handle_receipt_response(struct sh2lib_handle *handle, const char *data, size_t len, int flags) {
+    if (len > 0) {
+        Receipt response = Receipt_init_zero;
+        transaction_receipt *receipt = arg_receipt;
+        char raw_address[64];
+        int status;
+
+        memset(receipt, 0, sizeof(struct transaction_receipt));
+
+        DEBUG_PRINT_BUFFER("returned", data, len);
+
+        /* Create a stream that reads from the buffer */
+        pb_istream_t stream = pb_istream_from_buffer((const unsigned char *)&data[5], len-5);
+
+        /* Set the callback functions */
+
+        struct blob s1 { .ptr = (uint8_t*) raw_address, .size = sizeof raw_address };
+        response.contractAddress.arg = &s1;
+        response.contractAddress.funcs.decode = &read_blob;
+
+        struct blob s2 { .ptr = (uint8_t*) receipt->status, .size = sizeof receipt->status };
+        response.status.arg = &s2;
+        response.status.funcs.decode = &read_string;
+
+        struct blob s3 { .ptr = (uint8_t*) receipt->ret, .size = sizeof receipt->ret };
+        response.ret.arg = &s3;
+        response.ret.funcs.decode = &read_string;
+
+        struct blob b1 { .ptr = (uint8_t*) receipt->txHash, .size = sizeof receipt->txHash };
+        response.txHash.arg = &b1;
+        response.txHash.funcs.decode = &read_blob;
+
+        struct blob b2 { .ptr = (uint8_t*) receipt->blockHash, .size = sizeof receipt->blockHash };
+        response.blockHash.arg = &b2;
+        response.blockHash.funcs.decode = &read_blob;
+
+        response.feeUsed.arg = &receipt->feeUsed;
+        response.feeUsed.funcs.decode = &read_bignum_to_double;
+
+        /* Now we are ready to decode the message */
+        status = pb_decode(&stream, Receipt_fields, &response);
+        if (!status) {
+            DEBUG_PRINTF("Decoding failed: %s\n", PB_GET_ERROR(&stream));
+            return 1;
+        }
+
+        /* encode the contract address from binary to string format */
+        encode_address(raw_address, AddressLength, receipt->contractAddress, sizeof receipt->contractAddress);
+
+        /* copy values */
+        receipt->gasUsed = response.gasUsed;
+        receipt->blockNo = response.blockNo;
+        receipt->txIndex = response.txIndex;
+        receipt->feeDelegation = response.feeDelegation;
+
+        arg_success = true;
+
+    } else {
+        DEBUG_PRINTLN("returned 0 bytes");
+    }
+
+    if (flags == DATA_RECV_FRAME_COMPLETE) {
+        DEBUG_PRINTLN("COMPLETE FRAME RECEIVED");
+    } else if (flags == DATA_RECV_RST_STREAM) {
+        request_finished = true;
+        DEBUG_PRINTLN("STREAM CLOSED");
+    }
+    return 0;
+}
+
 ///////////////////////////////////////////////////////////////////////////////////////////////////
 
 uint32_t encode_http2_data_frame(uint8_t *buffer, uint32_t content_size);
@@ -797,6 +875,7 @@ struct txn {
   unsigned char *chainIdHash;   // hash value of chain identifier in the block
   unsigned char sign[MBEDTLS_ECDSA_MAX_LEN]; // sender's signature for this TxBody
   size_t sig_len;
+  unsigned char hash[32];       // hash of the whole transaction including the signature
 };
 
 bool encode_bigint(uint8_t **pptr, uint64_t value){
@@ -878,16 +957,15 @@ bool sign_transaction(struct txn *txn, mbedtls_ecdsa_context *account){
 
 bool encode_1_transaction(pb_ostream_t *stream, const pb_field_t *field, void * const *arg) {
   struct txn *txn = *(struct txn **)arg;
-  uint8_t hash[32];
   Tx message = Tx_init_zero;
 
   if (!pb_encode_tag_for_field(stream, field))
       return false;
 
-  calculate_tx_hash(txn, hash, true);
+  calculate_tx_hash(txn, txn->hash, true);
 
   /* Set the values and the encoder callback functions */
-  struct blob bb { .ptr = hash, .size = 32 };
+  struct blob bb { .ptr = txn->hash, .size = 32 };
   message.hash.arg = &bb;
   message.hash.funcs.encode = &encode_blob;
 
@@ -933,7 +1011,7 @@ bool encode_1_transaction(pb_ostream_t *stream, const pb_field_t *field, void * 
   return status;
 }
 
-bool encode_transaction(uint8_t *buffer, size_t *psize, struct txn *txn) {
+bool encode_transaction(uint8_t *buffer, size_t *psize, char *txn_hash, struct txn *txn) {
   TxList message = TxList_init_zero;
   uint32_t size;
 
@@ -951,6 +1029,10 @@ bool encode_transaction(uint8_t *buffer, size_t *psize, struct txn *txn) {
     return false;
   }
 
+  if (txn_hash) {
+    memcpy(txn_hash, txn->hash, 32);
+  }
+
   size = encode_http2_data_frame(buffer, stream.bytes_written);
 
   DEBUG_PRINT_BUFFER("Message", buffer, size);
@@ -963,7 +1045,7 @@ bool encode_transaction(uint8_t *buffer, size_t *psize, struct txn *txn) {
 // COMMAND ENCODING
 ///////////////////////////////////////////////////////////////////////////////////////////////////
 
-bool EncodeTransfer(uint8_t *buffer, size_t *psize, aergo_account *account, char *recipient, uint8_t *amount, int amount_len) {
+bool EncodeTransfer(uint8_t *buffer, size_t *psize, char *txn_hash, aergo_account *account, char *recipient, uint8_t *amount, int amount_len) {
   struct txn txn;
   char out[64]={0};
 
@@ -991,10 +1073,10 @@ bool EncodeTransfer(uint8_t *buffer, size_t *psize, aergo_account *account, char
     return false;
   }
 
-  return encode_transaction(buffer, psize, &txn);
+  return encode_transaction(buffer, psize, txn_hash, &txn);
 }
 
-bool EncodeContractCall(uint8_t *buffer, size_t *psize, char *contract_address, char *call_info, aergo_account *account) {
+bool EncodeContractCall(uint8_t *buffer, size_t *psize, char *txn_hash, char *contract_address, char *call_info, aergo_account *account) {
   struct txn txn;
   char out[64]={0};
 
@@ -1020,7 +1102,7 @@ bool EncodeContractCall(uint8_t *buffer, size_t *psize, char *contract_address, 
     return false;
   }
 
-  return encode_transaction(buffer, psize, &txn);
+  return encode_transaction(buffer, psize, txn_hash, &txn);
 }
 
 bool EncodeQuery(uint8_t *buffer, size_t *psize, char *contract_address, char *query_info){
@@ -1103,6 +1185,33 @@ bool EncodeAccountAddress(uint8_t *buffer, size_t *psize, mbedtls_ecdsa_context 
   /* Set the callback functions */
   message.value.funcs.encode = &encode_ecdsa_address;
   message.value.arg = account;
+
+  /* Now we are ready to decode the message */
+  bool status = pb_encode(&stream, SingleBytes_fields, &message);
+  if (!status) {
+    DEBUG_PRINTF("Encoding failed: %s\n", PB_GET_ERROR(&stream));
+    return false;
+  }
+
+  size = encode_http2_data_frame(buffer, stream.bytes_written);
+
+  DEBUG_PRINT_BUFFER("Message", buffer, size);
+
+  *psize = size;
+  return true;
+}
+
+bool EncodeTxnHash(uint8_t *buffer, size_t *psize, char *txn_hash){
+  SingleBytes message = SingleBytes_init_zero;
+  uint32_t size;
+
+  /* Create a stream that writes to the buffer */
+  pb_ostream_t stream = pb_ostream_from_buffer(&buffer[5], *psize - 5);
+
+  /* Set the callback functions */
+  struct blob bb { .ptr = txn_hash, .size = 32 };
+  message.value.arg = &bb;
+  message.value.funcs.encode = &encode_blob;
 
   /* Now we are ready to decode the message */
   bool status = pb_encode(&stream, SingleBytes_fields, &message);
@@ -1251,7 +1360,7 @@ bool check_blockchain_id_hash(aergo *instance) {
 // EXPORTED FUNCTIONS
 ///////////////////////////////////////////////////////////////////////////////////////////////////
 
-bool aergo_transfer_bignum(aergo *instance, aergo_account *from_account, char *to_account, char *amount, int len){
+bool aergo_transfer_bignum(aergo *instance, char *txn_hash, aergo_account *from_account, char *to_account, char *amount, int len){
   uint8_t buffer[1024];
   size_t size;
 
@@ -1264,7 +1373,7 @@ bool aergo_transfer_bignum(aergo *instance, aergo_account *from_account, char *t
 
   arg_success = false;
   size = sizeof(buffer);
-  if (EncodeTransfer(buffer, &size, from_account, to_account, amount, len)){
+  if (EncodeTransfer(buffer, &size, txn_hash, from_account, to_account, amount, len)){
     arg_aergo_account = from_account;
     send_grpc_request(&instance->hd, "CommitTX", buffer, size, handle_transfer_response);
   }
@@ -1272,36 +1381,36 @@ bool aergo_transfer_bignum(aergo *instance, aergo_account *from_account, char *t
   return arg_success;
 }
 
-bool aergo_transfer_str(aergo *instance, aergo_account *from_account, char *to_account, char *value){
+bool aergo_transfer_str(aergo *instance, char *txn_hash, aergo_account *from_account, char *to_account, char *value){
   char buf[16];
   int len;
 
   len = string_to_bignum(value, strlen(value), buf, sizeof(buf));
 
-  return aergo_transfer_bignum(instance, from_account, to_account, buf, len);
+  return aergo_transfer_bignum(instance, txn_hash, from_account, to_account, buf, len);
 
 }
 
-bool aergo_transfer(aergo *instance, aergo_account *from_account, char *to_account, double value){
+bool aergo_transfer(aergo *instance, char *txn_hash, aergo_account *from_account, char *to_account, double value){
   char amount_str[36];
 
   snprintf(amount_str, sizeof(amount_str), "%f", value);
 
-  return aergo_transfer_str(instance, from_account, to_account, amount_str);
+  return aergo_transfer_str(instance, txn_hash, from_account, to_account, amount_str);
 
 }
 
-bool aergo_transfer_int(aergo *instance, aergo_account *from_account, char *to_account, uint64_t integer, uint64_t decimal){
+bool aergo_transfer_int(aergo *instance, char *txn_hash, aergo_account *from_account, char *to_account, uint64_t integer, uint64_t decimal){
   char amount_str[36];
 
   snprintf(amount_str, sizeof(amount_str),
            "%lld.%018lld", integer, decimal);
 
-  return aergo_transfer_str(instance, from_account, to_account, amount_str);
+  return aergo_transfer_str(instance, txn_hash, from_account, to_account, amount_str);
 
 }
 
-bool aergo_call_smart_contract_json(aergo *instance, aergo_account *account, char *contract_address, char *function, char *args){
+bool aergo_call_smart_contract_json(aergo *instance, char *txn_hash, aergo_account *account, char *contract_address, char *function, char *args){
   uint8_t call_info[512], buffer[1024];
   size_t size;
 
@@ -1317,7 +1426,7 @@ bool aergo_call_smart_contract_json(aergo *instance, aergo_account *account, cha
 
   arg_success = false;
   size = sizeof(buffer);
-  if (EncodeContractCall(buffer, &size, contract_address, call_info, account)){
+  if (EncodeContractCall(buffer, &size, txn_hash, contract_address, call_info, account)){
     arg_aergo_account = account;
     send_grpc_request(&instance->hd, "CommitTX", buffer, size, handle_contract_call_response);
   }
@@ -1325,7 +1434,7 @@ bool aergo_call_smart_contract_json(aergo *instance, aergo_account *account, cha
   return arg_success;
 }
 
-bool aergo_call_smart_contract(aergo *instance, aergo_account *account, char *contract_address, char *function, char *types, ...){
+bool aergo_call_smart_contract(aergo *instance, char *txn_hash, aergo_account *account, char *contract_address, char *function, char *types, ...){
   uint8_t args[512];
   va_list ap;
   bool ret;
@@ -1335,10 +1444,10 @@ bool aergo_call_smart_contract(aergo *instance, aergo_account *account, char *co
   va_end(ap);
   if (ret == false) return false;
 
-  return aergo_call_smart_contract_json(instance, account, contract_address, function, args);
+  return aergo_call_smart_contract_json(instance, txn_hash, account, contract_address, function, args);
 }
 
-bool aergo_query_smart_contract_json(char *result, int resultlen, aergo *instance, char *contract_address, char *function, char *args){
+bool aergo_query_smart_contract_json(aergo *instance, char *result, int resultlen, char *contract_address, char *function, char *args){
   uint8_t query_info[512], buffer[512];
   size_t size;
 
@@ -1362,7 +1471,7 @@ bool aergo_query_smart_contract_json(char *result, int resultlen, aergo *instanc
   return arg_success;
 }
 
-bool aergo_query_smart_contract(char *result, int resultlen, aergo *instance, char *contract_address, char *function, char *types, ...){
+bool aergo_query_smart_contract(aergo *instance, char *result, int resultlen, char *contract_address, char *function, char *types, ...){
   uint8_t args[512], *pargs;
   va_list ap;
   bool ret;
@@ -1377,7 +1486,7 @@ bool aergo_query_smart_contract(char *result, int resultlen, aergo *instance, ch
     pargs = NULL;
   }
 
-  return aergo_query_smart_contract_json(result, resultlen, instance, contract_address, function, pargs);
+  return aergo_query_smart_contract_json(instance, result, resultlen, contract_address, function, pargs);
 }
 
 bool aergo_contract_events_subscribe(aergo *instance, char *contract_address, char *event_name, contract_event_cb cb){
@@ -1390,6 +1499,23 @@ bool aergo_contract_events_subscribe(aergo *instance, char *contract_address, ch
   size = sizeof(buffer);
   if (EncodeFilterInfo(buffer, &size, contract_address, event_name)){
     send_grpc_request(&instance->hd, "ListEventStream", buffer, size, handle_event_response);
+  }
+
+  return arg_success;
+}
+
+bool aergo_get_receipt(aergo *instance, char *txn_hash, struct transaction_receipt *receipt){
+  uint8_t buffer[256];
+  size_t size;
+
+  if (!instance || !txn_hash || !receipt) return false;
+
+  arg_receipt = receipt;
+  arg_success = false;
+
+  size = sizeof(buffer);
+  if (EncodeTxnHash(buffer, &size, txn_hash)){
+    send_grpc_request(&instance->hd, "GetReceipt", buffer, size, handle_receipt_response);
   }
 
   return arg_success;

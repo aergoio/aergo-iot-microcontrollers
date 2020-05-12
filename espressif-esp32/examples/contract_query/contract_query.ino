@@ -19,8 +19,8 @@ void http2_task(void *args)
   Serial.println("Connected");
 
   bool ret = aergo_query_smart_contract(
-    response, sizeof response,
     &instance,
+    response, sizeof response,
     "AmgLnRaGFLyvCPCEMHYJHooufT1c1pENTRGeV78WNPTxwQ2RYUW7",
     "hello", NULL
   );
@@ -29,7 +29,7 @@ void http2_task(void *args)
     Serial.println("");
     Serial.println("------------------------------------");
     Serial.println("Smart Contract Query OK");
-    Serial.printf("Response: %s\n", response);
+    Serial.printf ("Response: %s\n", response);
     Serial.println("------------------------------------");
     Serial.println("");
   } else {
