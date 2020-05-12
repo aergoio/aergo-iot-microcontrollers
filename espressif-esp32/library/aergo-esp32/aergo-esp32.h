@@ -27,7 +27,7 @@ struct aergo_account {
   bool is_updated;
 };
 
-int get_private_key(aergo_account *account);
+int aergo_esp32_load_account(aergo_account *account);
 
 bool aergo_get_account_state(aergo *instance, aergo_account *account);
 

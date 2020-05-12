@@ -19,7 +19,7 @@ void http2_task(void *args)
   Serial.println("Connected");
 
 
-  int rc = get_private_key(&account);
+  int rc = aergo_esp32_load_account(&account);
 
   aergo_get_account_state(&instance, &account);
   Serial.println("");

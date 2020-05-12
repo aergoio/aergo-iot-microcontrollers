@@ -98,7 +98,7 @@ static void print_buffer(const char *title, unsigned char *data, size_t len){
 #define EACH         64
 #define EEPROM_SIZE  (4 * EACH) + 2
 
-int get_private_key(aergo_account *account){
+int aergo_esp32_load_account(aergo_account *account){
   const mbedtls_ecp_curve_info *curve_info = mbedtls_ecp_curve_info_from_grp_id(MBEDTLS_ECP_DP_SECP256K1);
   mbedtls_ecdsa_context *keypair;
   unsigned char buf[EEPROM_SIZE];
