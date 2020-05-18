@@ -941,7 +941,6 @@ bool sign_transaction(struct txn *txn, mbedtls_ecdsa_context *account){
 
   calculate_tx_hash(txn, hash, false);
 
-  DEBUG_PRINTLN("sign_transaction");
   DEBUG_PRINT_BUFFER("  hash", hash, sizeof(hash));
 
   // Sign the message hash
@@ -1087,7 +1086,6 @@ bool EncodeTransfer(uint8_t *buffer, size_t *psize, char *txn_hash, aergo_accoun
 
 bool EncodeContractCall(uint8_t *buffer, size_t *psize, char *txn_hash, char *contract_address, char *call_info, aergo_account *account) {
   struct txn txn;
-  char out[64]={0};
 
   DEBUG_PRINTLN("EncodeContractCall");
 
@@ -1105,9 +1103,14 @@ bool EncodeContractCall(uint8_t *buffer, size_t *psize, char *txn_hash, char *co
   txn.type = TxType_CALL;
   txn.chainIdHash = blockchain_id_hash;
 
+#ifdef DEBUG_MESSAGES
+  {
+  char out[64]={0};
   encode_address(txn.account, sizeof txn.account, out, sizeof out);
   DEBUG_PRINTF("account address: %s\n", out);
   DEBUG_PRINTF("account nonce: %llu\n", account->nonce);
+  }
+#endif
 
   if (sign_transaction(&txn, &account->keypair) == false) {
     return false;
@@ -1389,11 +1392,15 @@ bool aergo_transfer_bignum(aergo *instance, char *txn_hash, aergo_account *from_
   uint8_t buffer[1024];
   size_t size;
 
+  DEBUG_PRINTLN("aergo_transfer");
+
+  if (!instance || !from_account || !to_account || !amount || len <= 0) return false;
+
   if (check_blockchain_id_hash(instance) == false) return false;
 
   // check if nonce was retrieved
-  if ( !from_account->is_updated ){
-    if ( aergo_get_account_state(instance, from_account) == false ) return false;
+  if (!from_account->is_updated) {
+    if (aergo_get_account_state(instance, from_account) == false) return false;
   }
 
   arg_success = false;
@@ -1439,11 +1446,15 @@ bool aergo_call_smart_contract_json(aergo *instance, char *txn_hash, aergo_accou
   uint8_t call_info[512], buffer[1024];
   size_t size;
 
+  DEBUG_PRINTLN("aergo_call_smart_contract");
+
+  if (!instance || !account || !contract_address || !function) return false;
+
   if (check_blockchain_id_hash(instance) == false) return false;
 
   // check if nonce was retrieved
-  if ( !account->is_updated ){
-    if ( aergo_get_account_state(instance, account) == false ) return false;
+  if (!account->is_updated) {
+    if (aergo_get_account_state(instance, account) == false) return false;
   }
 
   snprintf(call_info, sizeof(call_info),
@@ -1475,6 +1486,10 @@ bool aergo_call_smart_contract(aergo *instance, char *txn_hash, aergo_account *a
 bool aergo_query_smart_contract_json(aergo *instance, char *result, int resultlen, char *contract_address, char *function, char *args){
   uint8_t query_info[512], buffer[512];
   size_t size;
+
+  DEBUG_PRINTLN("aergo_query_smart_contract");
+
+  if (!instance || !contract_address || !function || !result || resultlen <= 0) return false;
 
   if (args) {
     snprintf(query_info, sizeof(query_info),
@@ -1518,6 +1533,10 @@ bool aergo_contract_events_subscribe(aergo *instance, char *contract_address, ch
   uint8_t buffer[256];
   size_t size;
 
+  DEBUG_PRINTLN("aergo_contract_events_subscribe");
+
+  if (!instance || !contract_address || !cb) return false;
+
   arg_contract_event_cb = cb;
   arg_success = false;
 
@@ -1532,6 +1551,8 @@ bool aergo_contract_events_subscribe(aergo *instance, char *contract_address, ch
 bool aergo_get_receipt(aergo *instance, char *txn_hash, struct transaction_receipt *receipt){
   uint8_t buffer[256];
   size_t size;
+
+  DEBUG_PRINTLN("aergo_get_receipt");
 
   if (!instance || !txn_hash || !receipt) return false;
 
@@ -1550,6 +1571,10 @@ void aergo_get_block(aergo *instance, uint64_t blockNo){
   uint8_t buffer[128];
   size_t size;
 
+  DEBUG_PRINTLN("aergo_get_block");
+
+  if (!instance || blockNo==0) return;
+
   size = sizeof(buffer);
   if (EncodeBlockNo(buffer, &size, blockNo)){
     send_grpc_request(&instance->hd, "GetBlockMetadata", buffer, size, handle_block_response);
@@ -1561,6 +1586,10 @@ void aergo_block_stream_subscribe(aergo *instance){
   uint8_t buffer[128];
   size_t size;
 
+  DEBUG_PRINTLN("aergo_block_stream_subscribe");
+
+  if (!instance) return;
+
   size = sizeof(buffer);
   if (EncodeEmptyMessage(buffer, &size)){
     send_grpc_request(&instance->hd, "ListBlockStream", buffer, size, handle_block_response);
@@ -1571,6 +1600,11 @@ void aergo_block_stream_subscribe(aergo *instance){
 void aergo_get_blockchain_status(aergo *instance){
   uint8_t buffer[128];
   size_t size;
+  struct request *request = NULL;
+
+  DEBUG_PRINTLN("aergo_get_blockchain_status");
+
+  if (!instance) return;
 
   size = sizeof(buffer);
   if (EncodeEmptyMessage(buffer, &size)){
@@ -1582,6 +1616,10 @@ void aergo_get_blockchain_status(aergo *instance){
 bool aergo_get_account_state(aergo *instance, aergo_account *account){
   uint8_t buffer[128];
   size_t size;
+
+  DEBUG_PRINTLN("aergo_get_account_state");
+
+  if (!instance || !account) return false;
 
   account->is_updated = false;
 
