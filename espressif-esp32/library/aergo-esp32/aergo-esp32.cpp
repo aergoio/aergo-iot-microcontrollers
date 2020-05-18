@@ -222,12 +222,11 @@ bool read_string(pb_istream_t *stream, const pb_field_t *field, void **arg){
     struct blob *str = *(struct blob**)arg;
     size_t len = stream->bytes_left;
 
-    DEBUG_PRINTF("read_string arg=%p\n", str);
     if (!str) return true;
     DEBUG_PRINTF("read_string bytes_left=%d str->size=%d\n", stream->bytes_left, str->size);
 
     /* We could read block-by-block to avoid the large buffer... */
-    if (stream->bytes_left > str->size || stream->bytes_left < 0){
+    if (stream->bytes_left > str->size){
         DEBUG_PRINTF("FAILED! read_string\n");
         return false;
     }
@@ -237,7 +236,7 @@ bool read_string(pb_istream_t *stream, const pb_field_t *field, void **arg){
 
     str->ptr[len] = 0;  // null terminator
 
-    DEBUG_PRINTF("read_string ok\n");
+    DEBUG_PRINTF("read_string ok: %s\n", str->ptr);
     return true;
 }
 
@@ -414,7 +413,7 @@ bool encode_string(pb_ostream_t *stream, const pb_field_t *field, void * const *
 
     DEBUG_PRINTF("encode_string '%s'\n", str);
 
-    if (!arg) return true;
+    if (!str) return true;
 
     if (!pb_encode_tag_for_field(stream, field))
         return false;
@@ -455,7 +454,7 @@ int handle_blockchain_status_response(struct sh2lib_handle *handle, const char *
         int i, ret;
         BlockchainStatus status = BlockchainStatus_init_zero;
 
-        DEBUG_PRINT_BUFFER("returned", data, len);
+        DEBUG_PRINT_BUFFER("handle_blockchain_status_response", data, len);
 
         /* Create a stream that reads from the buffer */
         pb_istream_t stream = pb_istream_from_buffer((const unsigned char *)&data[5], len-5);
@@ -465,7 +464,7 @@ int handle_blockchain_status_response(struct sh2lib_handle *handle, const char *
         status.best_chain_id_hash.arg = &bb;
         status.best_chain_id_hash.funcs.decode = &read_blob;
 
-        /* Now we are ready to decode the message */
+        /* Decode the message */
         ret = pb_decode(&stream, BlockchainStatus_fields, &status);
 
         /* Check for errors... */
@@ -497,7 +496,7 @@ int handle_account_state_response(struct sh2lib_handle *handle, const char *data
         int i, ret;
         State account_state = State_init_zero;
 
-        DEBUG_PRINT_BUFFER("returned", data, len);
+        DEBUG_PRINT_BUFFER("handle_account_state_response", data, len);
 
         /* Create a stream that reads from the buffer */
         pb_istream_t stream = pb_istream_from_buffer((const unsigned char *)&data[5], len-5);
@@ -511,7 +510,7 @@ int handle_account_state_response(struct sh2lib_handle *handle, const char *data
         account_state.storageRoot.arg = &bb;
         account_state.storageRoot.funcs.decode = &read_blob;
 
-        /* Now we are ready to decode the message */
+        /* Decode the message */
         ret = pb_decode(&stream, State_fields, &account_state);
 
         /* Check for errors... */
@@ -546,7 +545,7 @@ int handle_block_response(struct sh2lib_handle *handle, const char *data, size_t
         int i, status;
         Block block = Block_init_zero;
 
-        DEBUG_PRINT_BUFFER("returned", data, len);
+        DEBUG_PRINT_BUFFER("handle_block_response", data, len);
 
         /* Create a stream that reads from the buffer */
         pb_istream_t stream = pb_istream_from_buffer((const unsigned char *)&data[5], len-5);
@@ -559,7 +558,7 @@ int handle_block_response(struct sh2lib_handle *handle, const char *data, size_t
         block.body.txs.funcs.decode = &print_string;
         block.body.txs.arg = (void*)"txs";
 
-        /* Now we are ready to decode the message */
+        /* Decode the message */
         status = pb_decode(&stream, Block_fields, &block);
 
         /* Check for errors... */
@@ -591,7 +590,7 @@ int handle_transfer_response(struct sh2lib_handle *handle, const char *data, siz
         int i, status;
         CommitResultList response = CommitResultList_init_zero;
 
-        DEBUG_PRINT_BUFFER("returned", data, len);
+        DEBUG_PRINT_BUFFER("handle_transfer_response", data, len);
 
         /* Create a stream that reads from the buffer */
         pb_istream_t stream = pb_istream_from_buffer((const unsigned char *)&data[5], len-5);
@@ -600,7 +599,7 @@ int handle_transfer_response(struct sh2lib_handle *handle, const char *data, siz
         //response.results.funcs.decode = &decode_commit_result;
         //response.results.arg = ...;
 
-        /* Now we are ready to decode the message */
+        /* Decode the message */
         status = pb_decode(&stream, CommitResultList_fields, &response);
 
         /* Check for errors... */
@@ -633,7 +632,7 @@ int handle_contract_call_response(struct sh2lib_handle *handle, const char *data
         int i, status;
         CommitResultList response = CommitResultList_init_zero;
 
-        DEBUG_PRINT_BUFFER("returned", data, len);
+        DEBUG_PRINT_BUFFER("handle_contract_call_response", data, len);
 
         /* Create a stream that reads from the buffer */
         pb_istream_t stream = pb_istream_from_buffer((const unsigned char *)&data[5], len-5);
@@ -642,7 +641,7 @@ int handle_contract_call_response(struct sh2lib_handle *handle, const char *data
         //response.results.funcs.decode = &decode_commit_result;
         //response.results.arg = ...;
 
-        /* Now we are ready to decode the message */
+        /* Decode the message */
         status = pb_decode(&stream, CommitResultList_fields, &response);
 
         /* Check for errors... */
@@ -675,7 +674,7 @@ int handle_query_response(struct sh2lib_handle *handle, const char *data, size_t
         int i, status;
         SingleBytes response = SingleBytes_init_zero;
 
-        DEBUG_PRINT_BUFFER("returned", data, len);
+        DEBUG_PRINT_BUFFER("handle_query_response", data, len);
 
         /* Create a stream that reads from the buffer */
         pb_istream_t stream = pb_istream_from_buffer((const unsigned char *)&data[5], len-5);
@@ -684,7 +683,7 @@ int handle_query_response(struct sh2lib_handle *handle, const char *data, size_t
         response.value.arg = &arg_str;
         response.value.funcs.decode = &read_string;
 
-        /* Now we are ready to decode the message */
+        /* Decode the message */
         status = pb_decode(&stream, SingleBytes_fields, &response);
 
         /* Check for errors... */
@@ -718,7 +717,7 @@ int handle_event_response(struct sh2lib_handle *handle, const char *data, size_t
         char raw_address[64];
         int status;
 
-        DEBUG_PRINT_BUFFER("returned", data, len);
+        DEBUG_PRINT_BUFFER("handle_event_response", data, len);
 
         if (arg_contract_event_cb==NULL) {
           DEBUG_PRINTLN("STREAM CLOSED");
@@ -751,7 +750,7 @@ int handle_event_response(struct sh2lib_handle *handle, const char *data, size_t
         response.blockHash.arg = &b2;
         response.blockHash.funcs.decode = &read_blob;
 
-        /* Now we are ready to decode the message */
+        /* Decode the message */
         status = pb_decode(&stream, Event_fields, &response);
         if (!status) {
             DEBUG_PRINTF("Decoding failed: %s\n", PB_GET_ERROR(&stream));
@@ -793,7 +792,7 @@ int handle_receipt_response(struct sh2lib_handle *handle, const char *data, size
 
         memset(receipt, 0, sizeof(struct transaction_receipt));
 
-        DEBUG_PRINT_BUFFER("returned", data, len);
+        DEBUG_PRINT_BUFFER("handle_receipt_response", data, len);
 
         /* Create a stream that reads from the buffer */
         pb_istream_t stream = pb_istream_from_buffer((const unsigned char *)&data[5], len-5);
@@ -823,7 +822,7 @@ int handle_receipt_response(struct sh2lib_handle *handle, const char *data, size
         response.feeUsed.arg = &receipt->feeUsed;
         response.feeUsed.funcs.decode = &read_bignum_to_double;
 
-        /* Now we are ready to decode the message */
+        /* Decode the message */
         status = pb_decode(&stream, Receipt_fields, &response);
         if (!status) {
             DEBUG_PRINTF("Decoding failed: %s\n", PB_GET_ERROR(&stream));
@@ -896,6 +895,8 @@ bool calculate_tx_hash(struct txn *txn, unsigned char *hash, bool include_signat
   uint8_t buf[1024], *ptr;
   size_t len = 0;
 
+  DEBUG_PRINTLN("calculate_tx_hash");
+
   ptr = buf;
 
   memcpy(ptr, &txn->nonce, 8); ptr += 8;
@@ -936,6 +937,8 @@ bool sign_transaction(struct txn *txn, mbedtls_ecdsa_context *account){
   uint8_t hash[32];
   bool ret;
 
+  DEBUG_PRINTLN("sign_transaction");
+
   calculate_tx_hash(txn, hash, false);
 
   DEBUG_PRINTLN("sign_transaction");
@@ -958,6 +961,8 @@ bool sign_transaction(struct txn *txn, mbedtls_ecdsa_context *account){
 bool encode_1_transaction(pb_ostream_t *stream, const pb_field_t *field, void * const *arg) {
   struct txn *txn = *(struct txn **)arg;
   Tx message = Tx_init_zero;
+
+  DEBUG_PRINTLN("encode_1_transaction");
 
   if (!pb_encode_tag_for_field(stream, field))
       return false;
@@ -1003,7 +1008,7 @@ bool encode_1_transaction(pb_ostream_t *stream, const pb_field_t *field, void * 
   message.body.sign.funcs.encode = &encode_blob;
 
 
-  /* Now we are ready to decode the message */
+  /* Decode the message */
   bool status = pb_encode_submessage(stream, Tx_fields, &message);
   if (!status) {
     DEBUG_PRINTF("Encoding failed: %s\n", PB_GET_ERROR(stream));
@@ -1015,6 +1020,8 @@ bool encode_transaction(uint8_t *buffer, size_t *psize, char *txn_hash, struct t
   TxList message = TxList_init_zero;
   uint32_t size;
 
+  DEBUG_PRINTLN("encode_transaction");
+
   /* Create a stream that writes to the buffer */
   pb_ostream_t stream = pb_ostream_from_buffer(&buffer[5], *psize - 5);
 
@@ -1022,7 +1029,7 @@ bool encode_transaction(uint8_t *buffer, size_t *psize, char *txn_hash, struct t
   message.txs.arg = txn;
   message.txs.funcs.encode = &encode_1_transaction;
 
-  /* Now we are ready to decode the message */
+  /* Decode the message */
   bool status = pb_encode(&stream, TxList_fields, &message);
   if (!status) {
     DEBUG_PRINTF("Encoding failed: %s\n", PB_GET_ERROR(&stream));
@@ -1048,6 +1055,8 @@ bool encode_transaction(uint8_t *buffer, size_t *psize, char *txn_hash, struct t
 bool EncodeTransfer(uint8_t *buffer, size_t *psize, char *txn_hash, aergo_account *account, char *recipient, uint8_t *amount, int amount_len) {
   struct txn txn;
   char out[64]={0};
+
+  DEBUG_PRINTLN("EncodeTransfer");
 
   if (!amount || amount_len < 1) return false;
 
@@ -1080,6 +1089,8 @@ bool EncodeContractCall(uint8_t *buffer, size_t *psize, char *txn_hash, char *co
   struct txn txn;
   char out[64]={0};
 
+  DEBUG_PRINTLN("EncodeContractCall");
+
   /* increment the account nonce */
   account->nonce++;
 
@@ -1109,6 +1120,8 @@ bool EncodeQuery(uint8_t *buffer, size_t *psize, char *contract_address, char *q
   Query message = Query_init_zero;
   uint32_t size;
 
+  DEBUG_PRINTLN("EncodeQuery");
+
   /* Create a stream that writes to the buffer */
   pb_ostream_t stream = pb_ostream_from_buffer(&buffer[5], *psize - 5);
 
@@ -1118,7 +1131,7 @@ bool EncodeQuery(uint8_t *buffer, size_t *psize, char *contract_address, char *q
   message.queryinfo.funcs.encode = &encode_string;
   message.queryinfo.arg = query_info;
 
-  /* Now we are ready to decode the message */
+  /* Decode the message */
   bool status = pb_encode(&stream, Query_fields, &message);
   if (!status) {
     DEBUG_PRINTF("Encoding failed: %s\n", PB_GET_ERROR(&stream));
@@ -1136,6 +1149,8 @@ bool EncodeQuery(uint8_t *buffer, size_t *psize, char *contract_address, char *q
 bool EncodeFilterInfo(uint8_t *buffer, size_t *psize, char *contract_address, char *event_name){
   FilterInfo message = FilterInfo_init_zero;
   uint32_t size;
+
+  DEBUG_PRINTLN("EncodeFilterInfo");
 
   /* Create a stream that writes to the buffer */
   pb_ostream_t stream = pb_ostream_from_buffer(&buffer[5], *psize - 5);
@@ -1179,6 +1194,8 @@ bool EncodeAccountAddress(uint8_t *buffer, size_t *psize, mbedtls_ecdsa_context 
   SingleBytes message = SingleBytes_init_zero;
   uint32_t size;
 
+  DEBUG_PRINTLN("EncodeAccountAddress");
+
   /* Create a stream that writes to the buffer */
   pb_ostream_t stream = pb_ostream_from_buffer(&buffer[5], *psize - 5);
 
@@ -1186,7 +1203,7 @@ bool EncodeAccountAddress(uint8_t *buffer, size_t *psize, mbedtls_ecdsa_context 
   message.value.funcs.encode = &encode_ecdsa_address;
   message.value.arg = account;
 
-  /* Now we are ready to decode the message */
+  /* Decode the message */
   bool status = pb_encode(&stream, SingleBytes_fields, &message);
   if (!status) {
     DEBUG_PRINTF("Encoding failed: %s\n", PB_GET_ERROR(&stream));
@@ -1205,6 +1222,8 @@ bool EncodeTxnHash(uint8_t *buffer, size_t *psize, char *txn_hash){
   SingleBytes message = SingleBytes_init_zero;
   uint32_t size;
 
+  DEBUG_PRINTLN("EncodeTxnHash");
+
   /* Create a stream that writes to the buffer */
   pb_ostream_t stream = pb_ostream_from_buffer(&buffer[5], *psize - 5);
 
@@ -1213,7 +1232,7 @@ bool EncodeTxnHash(uint8_t *buffer, size_t *psize, char *txn_hash){
   message.value.arg = &bb;
   message.value.funcs.encode = &encode_blob;
 
-  /* Now we are ready to decode the message */
+  /* Decode the message */
   bool status = pb_encode(&stream, SingleBytes_fields, &message);
   if (!status) {
     DEBUG_PRINTF("Encoding failed: %s\n", PB_GET_ERROR(&stream));
@@ -1234,6 +1253,8 @@ bool EncodeBlockNo(uint8_t *buffer, size_t *psize, uint64_t blockNo){
   //  Block block = Block_init_zero;
   uint32_t size;
 
+  DEBUG_PRINTLN("EncodeBlockNo");
+
   /* Create a stream that writes to the buffer */
   pb_ostream_t stream = pb_ostream_from_buffer(&buffer[5], *psize - 5);
 
@@ -1241,7 +1262,7 @@ bool EncodeBlockNo(uint8_t *buffer, size_t *psize, uint64_t blockNo){
   message.value.funcs.encode = &encode_fixed64;
   message.value.arg = &blockNo;
 
-  /* Now we are ready to decode the message */
+  /* Decode the message */
   bool status = pb_encode(&stream, SingleBytes_fields, &message);
   if (!status) {
     DEBUG_PRINTF("Encoding failed: %s\n", PB_GET_ERROR(&stream));
@@ -1260,10 +1281,12 @@ bool EncodeEmptyMessage(uint8_t *buffer, size_t *psize){
   Empty message = Empty_init_zero;
   uint32_t size;
 
+  DEBUG_PRINTLN("EncodeEmptyMessage");
+
   /* Create a stream that writes to the buffer */
   pb_ostream_t stream = pb_ostream_from_buffer(&buffer[5], *psize - 5);
 
-  /* Now we are ready to decode the message */
+  /* Decode the message */
   bool status = pb_encode(&stream, Empty_fields, &message);
   if (!status) {
     DEBUG_PRINTF("Encoding failed: %s\n", PB_GET_ERROR(&stream));
@@ -1312,6 +1335,8 @@ int send_post_data(struct sh2lib_handle *handle, char *buf, size_t length, uint3
 void send_grpc_request(struct sh2lib_handle *hd, char *service, uint8_t *buffer, size_t size, sh2lib_frame_data_recv_cb_t response_callback) {
   char path[64];
   char len[8];
+
+  DEBUG_PRINTF("send_post_data [%s] size=%zu\n", service, size);
 
   to_send = buffer;
   send_size = size;
