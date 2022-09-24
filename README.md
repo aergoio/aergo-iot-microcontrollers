@@ -19,3 +19,7 @@ For 2 reasons:
 ## Use cases
 
 Please check the [wiki](https://github.com/aergoio/aergo-iot-microcontrollers/wiki/Use-cases) for some suggestions
+
+## Demo
+
+[![video](https://user-images.githubusercontent.com/7624275/192082928-7f54c4ea-581c-4c65-b224-c46440d5cfe4.png)](https://drive.google.com/file/d/1PIbxpOayqaiWvrn3aTQPeZHXRwU8QZac/view?usp=sharing)
